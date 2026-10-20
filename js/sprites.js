@@ -6,22 +6,63 @@
   'use strict';
 
   /* Pixel maps: 14 wide. Head+torso is 13 rows, legs are 7 rows and
-   * swapped per animation frame. Palette keys are remapped per character
-   * so the red lead and green lead share one design with swapped colors. */
-  var BODY = [
+   * swapped per animation frame. Two distinct characters:
+   * slot "red" = S.C. (curly hair, beard, black tee, chain, sneakers),
+   * slot "green" = B.T. (long brown hair, white embroidered blouse). */
+  var BODY_SC = [
     '..............',
-    '....CCCCCC....',
-    '...CCCCCCCC...',
-    '..CCDDDDDDCC..',
-    '..SSSSSSSSSS..',
-    '..SEKSSSSEKS..',
-    '..SSSSSSSSSS..',
-    '...SSSSSSSS...',
-    '..BBBBBBBBBB..',
-    '.SBBBBBBBBBBS.',
-    '.SSBBBBBBBBSS.',
-    '..BBBWWBBB....',
-    '..BBBBBBBB....'
+    '....HHHHHH....',
+    '..HHHHHHHHHH..',
+    '..HHHHHHHHHH..',
+    '..HHSSSSSSHH..',
+    '..HSESSSSESH..',
+    '..HSKSSSSKSH..',
+    '....KKKKKK....',
+    '...TTTTTTTT...',
+    '..TTNNNNNNTT..',
+    '.STTTTTTTTTTS.',
+    '..TTTGGTTTT...',
+    '..TTTTTTTT....'
+  ];
+  var BODY_BT = [
+    '..............',
+    '....HHHHHH....',
+    '...HHHHHHHH...',
+    '..HHHHHHHHHH..',
+    '..HHSSSSSSHH..',
+    '..HSESSSSESH..',
+    '..HHSSSSSSHH..',
+    '..HHSSSSSSHH..',
+    '...HSSSSSSH...',
+    '..HWWWWWWWWH..',
+    '.SWWGWWGWWWS..',
+    '.SSWWWWWWWWSS.',
+    '..WWWWWWWW....'
+  ];
+  var BANANA = [
+    '...TT.....',
+    '...YY.....',
+    '..YYY.....',
+    '..YYH.....',
+    '.YYH......',
+    '.YY.......',
+    'YY........',
+    'YYY.......',
+    '.YYYY.....',
+    '..YYYY....',
+    '...YY.....'
+  ];
+  var JAR = [
+    '..LLLLLLLLLL..',
+    '.LLLLLLLLLLLL.',
+    '..JJJJJJJJJJ..',
+    '.JWWWWWWWWWWJ.',
+    '.JWRRRRRRRRWJ.',
+    '.JWRRRRRRRRWJ.',
+    '.JWWWWWWWWWWJ.',
+    '.JWNNWWNNWWJ..',
+    '..JJJJJJJJJJ..',
+    '..JJJJJJJJJJ..'
   ];
   var LEGS = {
     stand: [
@@ -105,11 +146,16 @@
   ];
 
   var PALETTES = {
-    red:   { C: '#e23b2e', D: '#8f1d14', S: '#f2b98a', E: '#20202a', B: '#274690', W: '#f4f4f4' },
-    green: { C: '#2fae4e', D: '#17632c', S: '#f2b98a', E: '#20202a', B: '#274690', W: '#f4f4f4' },
+    /* S.C. — slot "red" */
+    red:   { H: '#262028', S: '#c68863', E: '#191520', K: '#33231a', T: '#2a2733', N: '#e6ecf7', G: '#e0452f', B: '#2e3d6b', D: '#9e2418', W: '#f4f4f4' },
+    /* B.T. — slot "green" */
+    green: { H: '#71462a', S: '#f3c894', E: '#241a12', K: '#33231a', T: '#2a2733', N: '#e6ecf7', G: '#c93a54', B: '#37548c', D: '#efe9dd', W: '#f8f4ee' },
     walker:  { O: '#b0722f', W: '#ffffff', K: '#20202a', F: '#6e4416' },
-    sheller: { T: '#f2b98a', E: '#20202a', G: '#2e8f86', W: '#dff7f2', F: '#20504c' }
+    sheller: { T: '#f2b98a', E: '#20202a', G: '#2e8f86', W: '#dff7f2', F: '#20504c' },
+    banana: { T: '#7a4a21', Y: '#ffd83d', H: '#fff0a0' },
+    jar: { L: '#f2f2f2', J: '#4a2c17', W: '#f8f4ee', R: '#d8232a', N: '#3a3a44' }
   };
+  var BODIES = { red: BODY_SC, green: BODY_BT };
 
   function renderMap(rows, palette, w, h) {
     var c = document.createElement('canvas');
@@ -140,7 +186,7 @@
     if (cache.done) return cache;
     ['red', 'green'].forEach(function (color) {
       var pal = PALETTES[color];
-      var body = renderMap(BODY, pal, 14, 13);
+      var body = renderMap(BODIES[color], pal, 14, 13);
       cache[color] = {};
       ['stand', 'run1', 'run2', 'jump'].forEach(function (f) {
         var full = document.createElement('canvas');
@@ -151,6 +197,8 @@
         cache[color][f] = { n: full, f: flip(full) };
       });
     });
+    cache.banana = renderMap(BANANA, PALETTES.banana, 10, 11);
+    cache.jar = renderMap(JAR, PALETTES.jar, 14, 10);
     var wk = renderMap(WALKER, PALETTES.walker, 14, 12);
     cache.walker = { n: wk, f: flip(wk) };
     var sh = renderMap(SHELLER_BODY, PALETTES.sheller, 14, 14);
@@ -231,9 +279,11 @@
         ctx.fillRect(x + 7, y + 4, 2, 8); ctx.fillRect(x + 4, y + 7, 8, 2);
         ctx.fillRect(x + 5, y + 5, 2, 2); ctx.fillRect(x + 9, y + 5, 2, 2);
         ctx.fillRect(x + 5, y + 9, 2, 2); ctx.fillRect(x + 9, y + 9, 2, 2);
-      } else { // berry glyph
-        ctx.beginPath(); ctx.arc(x + 8, y + 9, 4, 0, Math.PI * 2); ctx.fill();
-        ctx.fillRect(x + 8, y + 3, 1, 3);
+      } else { // jar glyph
+        ctx.fillStyle = '#f2f2f2'; ctx.fillRect(x + 5, y + 3, 6, 2);
+        ctx.fillStyle = '#4a2c17'; ctx.fillRect(x + 4, y + 5, 8, 7);
+        ctx.fillStyle = '#d8232a'; ctx.fillRect(x + 4, y + 7, 8, 2);
+        ctx.fillStyle = '#f8f4ee'; ctx.fillRect(x + 4, y + 10, 8, 1);
       }
     } else if (type === T.USED) {
       ctx.fillStyle = '#9c6b30'; ctx.fillRect(x, y, 16, 16);
@@ -277,8 +327,20 @@
     }
   }
 
+  function drawBanana(ctx, x, y) {
+    ctx.drawImage(build().banana, Math.round(x), Math.round(y));
+  }
+  function drawJar(ctx, x, y) {
+    ctx.drawImage(build().jar, Math.round(x), Math.round(y));
+  }
+  function preview(color) {
+    var s = build();
+    return s[color] ? s[color].stand.n : null;
+  }
+
   global.Sprites = {
     drawPlayer: drawPlayer, drawEnemy: drawEnemy,
-    drawTile: drawTile, drawBackground: drawBackground
+    drawTile: drawTile, drawBackground: drawBackground,
+    drawBanana: drawBanana, drawJar: drawJar, preview: preview
   };
 })(typeof window !== 'undefined' ? window : globalThis);
