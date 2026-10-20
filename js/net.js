@@ -26,6 +26,10 @@
   }
   function newClient() {
     return global.supabase.createClient(SB_URL, SB_ANON, {
+      /* No auth session is needed for room relaying. Disabling session
+       * persistence also disables supabase-js's cross-tab lock, which
+       * can otherwise stall a second tab's realtime join indefinitely. */
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
       realtime: { params: { eventsPerSecond: 40 } }
     });
   }
@@ -71,13 +75,17 @@
       cbs.onData && cbs.onData(d);
     });
 
+    var relayWatchdog = setTimeout(function () {
+      if (!opened) cbs.onError && cbs.onError('could not reach the session relay — check your connection and try again');
+    }, 20000);
     channel.subscribe(function (status) {
       if (status === 'SUBSCRIBED') {
+        clearTimeout(relayWatchdog);
         channel.track({ role: 'host' });
         if (!opened) { opened = true; cbs.onOpen && cbs.onOpen(code); }
-      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-        cbs.onError && cbs.onError('could not reach the session relay — check your connection and try again');
       }
+      /* CHANNEL_ERROR / TIMED_OUT: the client retries with backoff;
+       * the watchdog above reports only a persistent failure. */
     });
 
     var handle = wrap(client, channel, function () { return !!guestKey; });
@@ -125,13 +133,18 @@
       cbs.onData && cbs.onData(d);
     });
 
+    var subscribed = false;
+    var relayWatchdog = setTimeout(function () {
+      if (!subscribed) cbs.onError && cbs.onError('could not reach the session relay — check your connection and try again');
+    }, 20000);
     channel.subscribe(function (status) {
       if (status === 'SUBSCRIBED') {
+        subscribed = true;
+        clearTimeout(relayWatchdog);
         channel.track({ role: 'guest' });
-      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-        clearTimeout(notFoundTimer);
-        cbs.onError && cbs.onError('could not reach the session relay — check your connection and try again');
       }
+      /* CHANNEL_ERROR / TIMED_OUT: the client retries with backoff;
+       * the watchdog above reports only a persistent failure. */
     });
 
     var handle = wrap(client, channel, function () { return opened; });
