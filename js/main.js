@@ -188,7 +188,7 @@
       $('btn-ready').classList.toggle('ready-on', guestLobby.myReady);
       var note2 = '';
       if (myPick !== guestLobby.assigned) {
-        note2 = 'Host picked ' + guestLobby.hostPick + ' too — you will play ' + guestLobby.assigned + '.';
+        note2 = 'Host picked ' + colorName(guestLobby.hostPick) + ' too — you will play ' + colorName(guestLobby.assigned) + '.';
       }
       $('pick-note').textContent = note2;
       setStatus('lobby-status', 'You are in. Pick your character and ready up — the host starts the game.');
