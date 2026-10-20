@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Interactive Experience</title>
 <meta name="description" content="A lightweight browser-based interactive application with real-time session connectivity.">
-<link rel="stylesheet" href="style.css?v=5">
+<link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
 <main id="app">
@@ -16,11 +16,11 @@
   <section id="view-menu" class="panel">
     <div class="pick-row" role="group" aria-label="Your character">
       <span class="pick-label">You play as:</span>
-      <button id="pick-red" class="pick-btn selected" data-pick="red" type="button">
-        <span class="dot dot-red"></span> Red
+      <button id="pick-red" class="pick-btn char-btn selected" data-pick="red" type="button">
+        <canvas class="char-preview" data-color="red" width="42" height="60"></canvas> S.C.
       </button>
-      <button id="pick-green" class="pick-btn" data-pick="green" type="button">
-        <span class="dot dot-green"></span> Green
+      <button id="pick-green" class="pick-btn char-btn" data-pick="green" type="button">
+        <canvas class="char-preview" data-color="green" width="42" height="60"></canvas> B.T.
       </button>
     </div>
 
@@ -56,8 +56,8 @@
     <ul id="player-list" class="player-list"></ul>
     <div class="pick-row">
       <span class="pick-label">Character:</span>
-      <button id="lobby-pick-red" class="pick-btn" data-pick="red" type="button"><span class="dot dot-red"></span> Red</button>
-      <button id="lobby-pick-green" class="pick-btn" data-pick="green" type="button"><span class="dot dot-green"></span> Green</button>
+      <button id="lobby-pick-red" class="pick-btn char-btn" data-pick="red" type="button"><canvas class="char-preview" data-color="red" width="28" height="40"></canvas> S.C.</button>
+      <button id="lobby-pick-green" class="pick-btn char-btn" data-pick="green" type="button"><canvas class="char-preview" data-color="green" width="28" height="40"></canvas> B.T.</button>
       <span id="pick-note" class="pick-note"></span>
     </div>
     <div class="lobby-buttons">
@@ -71,7 +71,7 @@
   <!-- ============ GAME ============ -->
   <section id="view-game" class="hidden">
     <div class="hud">
-      <span>COINS <b id="hud-coins">0</b></span>
+      <span>BANANAS <b id="hud-coins">0</b></span>
       <span>SCORE <b id="hud-score">0</b></span>
       <span>TIME <b id="hud-time">300</b></span>
       <span id="hud-mode"></span>
@@ -93,10 +93,10 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/engine.js?v=5"></script>
-<script src="js/sprites.js?v=5"></script>
-<script src="js/audio.js?v=5"></script>
-<script src="js/net.js?v=5"></script>
-<script src="js/main.js?v=5"></script>
+<script src="js/engine.js?v=6"></script>
+<script src="js/sprites.js?v=6"></script>
+<script src="js/audio.js?v=6"></script>
+<script src="js/net.js?v=6"></script>
+<script src="js/main.js?v=6"></script>
 </body>
 </html>
