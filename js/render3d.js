@@ -591,13 +591,16 @@
         ]
     );
     root.add(body);
-    // a geometry (not a mesh) so it can be swapped onto the body mesh
+    root.userData.critter = type;
+    /* a geometry (not a mesh) so it can be swapped onto the body mesh.
+     * A stomped critter keeps this low shell silhouette while it sits and
+     * while it slides, so kicking one never pops it back into a full body. */
     var shellGeo = mergeParts([
-      [0, 4, 0, 14, 7, 14, 0x3f7d52],
-      [0, 7.5, 0, 9, 2.4, 9, 0x51a065],
+      [0, 4, 0, 14, 7, 14, type === 'sheller' ? 0x3f7d52 : 0xa8452f],
+      [0, 7.5, 0, 9, 2.4, 9, type === 'sheller' ? 0x51a065 : 0xbd4f36],
       [0, 2, 0, 15, 1.6, 15, 0xd9c9a0]
     ]);
-    return { root: root, body: body, shellGeo: shellGeo, walkGeo: body.geometry, state: '' };
+    return { root: root, body: body, type: type, shell: null, shellGeo: shellGeo, walkGeo: body.geometry };
   }
 
   /* a chunky crescent so it still reads while it spins */
@@ -767,12 +770,22 @@
     var chars = [makeCharacter('red'), makeCharacter('green')];
     chars.forEach(function (c) { scene.add(c.root); scene.add(c.puff); });
 
+    /* One mesh per critter, built to match its type. The old fixed pool of
+     * walkers drew every sheller with the walker sprite, so the green shell
+     * creature only appeared after it had been stomped. */
     var enemies = [];
-    for (var i = 0; i < 12; i++) {
-      var e = makeEnemy('walker');
-      e.root.visible = false;
-      scene.add(e.root);
-      enemies.push(e);
+    function ensureEnemies(list) {
+      for (var i = 0; i < list.length; i++) {
+        var want = list[i].type === 'sheller' ? 'sheller' : 'walker';
+        var have = enemies[i];
+        if (have && have.type === want) continue;
+        if (have) scene.remove(have.root);
+        var m = makeEnemy(want);
+        m.root.visible = false;
+        scene.add(m.root);
+        enemies[i] = m;
+      }
+      for (var j = list.length; j < enemies.length; j++) if (enemies[j]) enemies[j].root.visible = false;
     }
 
     var coinGeo = bananaGeometry();
@@ -1129,6 +1142,7 @@
       }
 
       // enemies
+      ensureEnemies(st.enemies || []);
       for (var ei = 0; ei < enemies.length; ei++) {
         var eg = enemies[ei];
         var en = st.enemies[ei];
@@ -1137,16 +1151,18 @@
         eg.root.visible = true;
         eg.root.position.set(epos[0] + en.w / 2, -(epos[1] + en.h), 24);
         eg.root.scale.x = en.dir > 0 ? 1 : -1;
-        var shell = en.state === 'shell';
-        if (eg.state !== en.state) {
-          eg.state = en.state;
+        var shell = en.state === 'shell' || en.state === 'slide';
+        if (eg.shell !== shell) {
+          eg.shell = shell;
           eg.body.geometry = shell ? eg.shellGeo : eg.walkGeo;
         }
         if (shell) {
           eg.root.position.y = -(epos[1] + 10);
-          eg.root.rotation.z = 0;
-        } else if (en.state === 'slide') {
+        }
+        if (en.state === 'slide') {
           eg.root.rotation.z += 0.25;
+        } else if (shell) {
+          eg.root.rotation.z = 0;
         } else {
           eg.root.rotation.z = 0;
           eg.root.position.y += Math.abs(Math.sin(st.tick * 0.22 + ei)) * 0.9;
@@ -1172,6 +1188,7 @@
       renderer: renderer,
       _dbg: {
         scene: scene, camera: camera, chars: chars, flags: flags, renderer: renderer,
+        enemies: function () { return enemies; },
         stage: function () { return stage; },
         /* the framing currently on screen — used by the browser checks */
         frame: function () {

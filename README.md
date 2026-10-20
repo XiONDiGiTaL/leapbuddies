@@ -72,6 +72,10 @@ on their own keyboard at a glance.
 
 ![A desktop view at the original fixed framing](shots/zoom-desktop.png)
 
+![Two critters patrolling the top of the high terrace, level with the player](shots/critters-terrace2.png)
+
+![A kicked shell sliding along the ground as a shell, not a full critter](shots/shell-slide.png)
+
 ---
 
 ## How a run works
@@ -97,6 +101,11 @@ on their own keyboard at a glance.
   the player in front.
 - **Bananas and jars.** Bananas are scattered through every stage; gold
   blocks pay out when bumped from below; jars grant the second heart.
+- **Critters.** A stomp kills a walker. A sheller curls into a low shell
+  instead: touch it and it slides, taking out anything it hits, and it
+  wakes back up after eight seconds. Both kinds patrol their own piece of
+  ground and turn at ledges, and a critter is always standing on the level —
+  never buried inside a block.
 - **Gate.** Both floor plates must be pressed at once (one in solo) to open
   the gate blocking the midpoint.
 - **Checkpoint and goal.** Touching the midpoint flag moves your respawn
@@ -293,7 +302,7 @@ needs an `https://` or `localhost` origin for the WebSocket and clipboard.
 node tests/smoke-node.js
 ```
 
-101 headless checks: level data, movement, gate (solo and two-plate forms),
+114 headless checks: level data, movement, gate (solo and two-plate forms),
 head bounce, jars, checkpoints, goal, the full lives model (solo deaths,
 three-strike game over, co-op bubbles, partner-down team wipes, timeout,
 respawn hearts, death pop placement), the camera split and catch-up
@@ -305,7 +314,12 @@ Turkish one, and every `data-i18n` hook in the page and every `T()` key used
 by the UI resolves), the volume range, and the camera framing (desktop stays
 at zoom 1, a phone zooms in until the buddy is 26 px tall, a split pair stays
 whole in frame, the frame never leaves the level, and `zoom: false` restores
-the fixed view).
+the fixed view). The critter pass covers spawns (nothing starts inside
+terrain, the terrace pair stands on the terrace), a fifteen-second patrol
+with no critter ending up buried or outside the level, recovery when one is
+shoved into the ground, and the stomp → shell → slide cycle (the shell keeps
+its low body when kicked, bounces off walls instead of disappearing, and
+wakes back up).
 
 Rendering, the how-to-play keycaps, local 2P and online co-op are verified
 in a browser: two tabs, invite link, ready, start, guest input, carry

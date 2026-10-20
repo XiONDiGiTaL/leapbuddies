@@ -83,11 +83,16 @@
     coinRow(170, 174, 7);
     coin(183, 7); coin(184, 7);
 
+    /* ty is the spawn row of the critter's FEET-side top, held one tile
+     * above the surface it should land on. The terrace pair sits on the
+     * high block (top row 11) instead of at ground level, which is inside
+     * that block: they used to spawn buried in the terrace wall. */
     var enemies = [
       { type: 'walker', tx: 14 }, { type: 'sheller', tx: 38 },
       { type: 'walker', tx: 57 }, { type: 'walker', tx: 78 },
-      { type: 'sheller', tx: 96 }, { type: 'walker', tx: 118 },
-      { type: 'walker', tx: 124 }, { type: 'sheller', tx: 142 },
+      { type: 'sheller', tx: 96 },
+      { type: 'walker', tx: 118, ty: 10 }, { type: 'walker', tx: 124, ty: 10 },
+      { type: 'sheller', tx: 142 },
       { type: 'walker', tx: 148 }, { type: 'walker', tx: 180, ty: 8 }
     ].map(function (e) {
       return {
@@ -140,7 +145,7 @@
     } else {
       players = [makePlayer(0, 'red', 2), makePlayer(1, 'green', 4)];
     }
-    return {
+    var st = {
       mode: opts.mode || 'local', twoPlayer: two, stage: opts.stage || 'izmir',
       tick: 0, tiles: level.tiles, baseTiles: level.tiles.slice(),
       levelW: level.w, levelH: level.h,
@@ -157,6 +162,9 @@
       camX: 0, events: [], tileDiff: {},
       rng: 12345
     };
+    /* settle authored spawns once so tick 0 is already clear of terrain */
+    for (var ei = 0; ei < st.enemies.length; ei++) unbury(st, st.enemies[ei]);
+    return st;
   }
 
   /* True when the AABB overlaps any solid tile. Used as a safety net so
@@ -185,6 +193,18 @@
     if (y > st.levelH * TILE) y = st.checkpoint.y;
     for (var i = 0; i < 12 && blockedBox(st, x, y, p.w, p.h); i++) y -= TILE;
     p.x = x; p.y = y; p.vx = 0; p.vy = 0;
+  }
+
+  /* Lift an entity that is inside terrain up to the nearest free row.
+   * An authored spawn can land in a solid block (the high terrace used to
+   * swallow two critters), and a moving platform can shove one into a
+   * wall; buried critters are invisible and unkillable, so they are
+   * recovered instead of being left to patrol inside the level. */
+  function unbury(st, p) {
+    if (!blockedBox(st, p.x, p.y, p.w, p.h)) return false;
+    for (var i = 0; i < st.levelH && blockedBox(st, p.x, p.y, p.w, p.h); i++) p.y -= TILE;
+    p.vy = 0;
+    return true;
   }
 
   function tileAt(st, tx, ty) {
@@ -532,6 +552,7 @@
   /* ------------------------------------------------------------------ */
   function stepEnemy(st, e) {
     if (e.dead) return;
+    unbury(st, e);
     if (e.state === 'shell') {
       e.timer++;
       e.vx = 0;

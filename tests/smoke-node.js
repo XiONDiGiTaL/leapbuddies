@@ -450,5 +450,74 @@ ok('a phone held sideways needs no zoom', landscapeFr.zoom === 1, { zoom: landsc
 ok('a very wide desktop never zooms out past the old view',
    Cam.frame({ cssW: 1920, cssH: 1080, levelW: 3200, center: 256, players: pair(0, 3000) }).halfW === Cam.baseHalfWidth(1920, 1080).halfW);
 
+/* ---- critters never live inside terrain ---- */
+function inTerrain(g2, b) {
+  var tx0 = Math.floor(b.x / TILE), tx1 = Math.floor((b.x + b.w - 0.01) / TILE);
+  var ty0 = Math.floor(b.y / TILE), ty1 = Math.floor((b.y + b.h - 0.01) / TILE);
+  for (var ty = ty0; ty <= ty1; ty++) {
+    for (var tx = tx0; tx <= tx1; tx++) {
+      if (tx < 0 || tx >= g2.levelW) return true;
+      if (ty < 0) continue;
+      if (ty >= g2.levelH) continue;
+      if (g2.tiles[ty * g2.levelW + tx] !== E.T.EMPTY) return true;
+    }
+  }
+  return false;
+}
+var cm = game();
+ok('no critter spawns buried in the level', cm.enemies.every(function (e) { return !inTerrain(cm, e); }),
+   { buried: cm.enemies.filter(function (e) { return inTerrain(cm, e); }).map(function (e) { return Math.round(e.x / TILE); }) });
+var terrace = cm.enemies.filter(function (e) { return e.x > 113 * TILE && e.x < 133 * TILE; });
+ok('the high-terrace pair spawns above the terrace block', terrace.length === 2, { n: terrace.length });
+stepN(cm, 30);
+ok('terrace critters land on the terrace top, not inside it', terrace.every(function (e) {
+  return Math.abs(e.y + e.h - 11 * TILE) < 0.6 && !inTerrain(cm, e);
+}), { bottoms: terrace.map(function (e) { return e.y + e.h; }) });
+
+var cm2 = game({ mode: 'local', twoPlayer: true });
+stepN(cm2, 900);
+var buried2 = cm2.enemies.filter(function (e) { return !e.dead && inTerrain(cm2, e); });
+ok('critters patrol for 15s without ending up inside terrain', buried2.length === 0, { n: buried2.length });
+ok('critters stay inside the level', cm2.enemies.every(function (e) {
+  return e.dead || (e.x >= 0 && e.x <= cm2.levelW * TILE && e.y <= cm2.levelH * TILE);
+}));
+
+var cm3 = game();
+cm3.enemies[0].x = 5 * TILE; cm3.enemies[0].y = 16 * TILE;   // shoved into the ground
+stepN(cm3, 1);
+ok('a critter shoved into terrain is lifted back out', !inTerrain(cm3, cm3.enemies[0]),
+   { y: cm3.enemies[0].y, tile: Math.round(cm3.enemies[0].y / TILE) });
+
+/* ---- stomp -> shell -> kick keeps the shell silhouette ---- */
+var sh = game();
+sh.enemies.length = 0;
+var sheller = { type: 'sheller', x: 30 * TILE, y: 240 - 14, w: 14, h: 14, vx: -0.4, vy: 0, dir: -1, state: 'walk', timer: 0, dead: false, onGround: true };
+sh.enemies.push(sheller);
+var sp = findPlayer(sh, 'red');
+sp.x = sheller.x + 2; sp.y = sheller.y - sp.h + 1; sp.vy = 3; sp.invuln = 0;
+stepN(sh, 1);
+ok('stomping a sheller turns it into a shell', sheller.state === 'shell' && !sheller.dead, { state: sheller.state });
+ok('the shell is a low body, not a full critter', sheller.h === 10, { h: sheller.h });
+sp.state = 'play'; sp.invuln = 0; sp.vy = 0;
+sp.x = sheller.x - 8; sp.y = sheller.y;
+stepN(sh, 1);
+ok('touching a shell kicks it sliding', sheller.state === 'slide' && sheller.vx > 1, { state: sheller.state, vx: sheller.vx });
+ok('a sliding shell keeps the shell body (no pop back to a full sprite)', sheller.h === 10, { h: sheller.h });
+
+var sh2 = game();
+sh2.enemies.length = 0;
+var wallShell = { type: 'sheller', x: 70 * TILE - 16, y: 240 - 10, w: 14, h: 10, vx: 3.3, vy: 0, dir: 1, state: 'slide', timer: 0, dead: false, onGround: true };
+sh2.enemies.push(wallShell);
+stepN(sh2, 2);
+ok('a sliding shell bounces off a wall instead of vanishing into it', wallShell.vx < 0 && !!wallShell, { vx: wallShell.vx });
+ok('the wall-bounced shell is still a shell', wallShell.h === 10 && !inTerrain(sh2, wallShell), { h: wallShell.h });
+
+var sh3 = game();
+sh3.enemies.length = 0;
+var restShell = { type: 'sheller', x: 20 * TILE, y: 240 - 10, w: 14, h: 10, vx: 0, vy: 0, dir: 1, state: 'shell', timer: 0, dead: false, onGround: true };
+sh3.enemies.push(restShell);
+stepN(sh3, 500);
+ok('a kicked-out shell wakes up and walks again', restShell.state === 'walk' && restShell.h === 14, { state: restShell.state, h: restShell.h });
+
 console.log('\n' + (checks - fails) + '/' + checks + ' checks passed');
 process.exit(fails ? 1 : 0);
