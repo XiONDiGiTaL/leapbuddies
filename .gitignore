@@ -1,0 +1,8 @@
+*.smc
+*.sfc
+*.zip
+.env
+.env.*
+node_modules/
+tests/output/
+.DS_Store
