@@ -448,7 +448,7 @@
     finishShown = true;
     Sfx.play('goal');
     var mins = Math.max(0, Math.ceil(st.timeLeft / 60));
-    showOverlay('LEVEL CLEAR!\nCoins: ' + st.coinCount + '   Score: ' + st.score + '\nTime left: ' + mins + 's', role !== 'guest');
+    showOverlay('LEVEL CLEAR!\nBananas: ' + st.coinCount + '   Score: ' + st.score + '\nTime left: ' + mins + 's', role !== 'guest');
     if (role === 'guest') setStatus('game-status', 'Waiting for the host to restart or end the session.');
   }
   // reset the flag whenever a new game starts
@@ -521,21 +521,15 @@
       ctx.fillStyle = '#ffd94a';
       ctx.fillRect(pl.x + 3, pl.y + 3, 3, 3); ctx.fillRect(pl.x + pl.w - 6, pl.y + 3, 3, 3);
     });
-    // coins
+    // bananas (collectibles)
     st.coinsArr.forEach(function (c, i) {
       if (c.taken) return;
-      var cx = c.x + 5, cy = c.y + 5 + Math.sin(st.tick * 0.1 + i) * 1.2;
-      var wob = Math.abs(Math.sin(st.tick * 0.08 + i * 0.7));
-      ctx.fillStyle = '#f7c948';
-      ctx.beginPath(); ctx.ellipse(cx, cy, 2 + 3 * wob, 5, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#fff3c4';
-      ctx.beginPath(); ctx.ellipse(cx, cy, 1 + 1.4 * wob, 3, 0, 0, Math.PI * 2); ctx.fill();
+      var bob = Math.sin(st.tick * 0.1 + i) * 1.2;
+      S.drawBanana(ctx, c.x, c.y + bob);
     });
-    // berries
+    // Nutella jars (power-up: extra hit / restore)
     st.berries.forEach(function (b) {
-      ctx.fillStyle = '#e2492f';
-      ctx.beginPath(); ctx.arc(b.x + 7, b.y + 7, 6, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#39d353'; ctx.fillRect(b.x + 6, b.y - 1, 2, 4);
+      S.drawJar(ctx, b.x, b.y + 2);
     });
     // enemies
     st.enemies.forEach(function (e, i) {
@@ -620,6 +614,16 @@
       };
     }
   };
+
+  // character-select previews: draw the actual sprites on the pick buttons
+  document.querySelectorAll('.char-preview').forEach(function (cv) {
+    var img = S.preview(cv.getAttribute('data-color'));
+    if (!img) return;
+    var g = cv.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    g.clearRect(0, 0, cv.width, cv.height);
+    g.drawImage(img, 0, 0, cv.width, cv.height);
+  });
 
   show('menu');
   paintPicks();
