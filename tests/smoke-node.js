@@ -24,13 +24,69 @@ function findPlayer(st, color) {
   return st.players.filter(function (p) { return p.color === color; })[0];
 }
 
-/* ---- the level itself is unchanged ---- */
+/* ---- four stages, four layouts, four casts ---- */
+var STAGES = ['izmir', 'nyc', 'istanbul', 'tampa'];
 var lvl = E.buildLevel();
-ok('level is 200 x 18', lvl.w === 200 && lvl.h === 18, { w: lvl.w, h: lvl.h });
-ok('64 bananas in the level', lvl.coins.length === 64, { n: lvl.coins.length });
-ok('10 critters', lvl.enemies.length === 10);
-ok('3 moving platforms', lvl.platforms.length === 3);
-ok('2 floor switches + gate at x=70', lvl.switches.length === 2 && lvl.gateTx === 70);
+ok('the default level is the İzmir one', lvl.stage === 'izmir' && E.buildLevel('nope').stage === 'izmir');
+ok('every stage is 200 x 18', STAGES.every(function (id) {
+  var l2 = E.buildLevel(id);
+  return l2.w === 200 && l2.h === 18;
+}));
+ok('every stage has 3 moving platforms', STAGES.every(function (id) { return E.buildLevel(id).platforms.length === 3; }));
+ok('every stage keeps 2 floor plates and the gate at x=70', STAGES.every(function (id) {
+  var l2 = E.buildLevel(id);
+  return l2.switches.length === 2 && l2.gateTx === 70 && l2.switches[0].tx === 63 && l2.switches[1].tx === 66;
+}));
+ok('every stage keeps the midpoint and goal anchors', STAGES.every(function (id) {
+  var l2 = E.buildLevel(id);
+  return l2.midpointTx === 92 && l2.goalTx === 176 && l2.goalTopTy === 9;
+}));
+ok('every stage carries 50-85 bananas', STAGES.every(function (id) {
+  var n = E.buildLevel(id).coins.length;
+  return n >= 50 && n <= 85;
+}), STAGES.map(function (id) { return E.buildLevel(id).coins.length; }));
+ok('every stage has 8-12 critters', STAGES.every(function (id) {
+  var n = E.buildLevel(id).enemies.length;
+  return n >= 8 && n <= 12;
+}), STAGES.map(function (id) { return E.buildLevel(id).enemies.length; }));
+var layouts = STAGES.map(function (id) { return JSON.stringify(E.buildLevel(id).tiles); });
+ok('no two stages share a terrain', new Set(layouts).size === 4);
+ok('the gate tower really blocks the walkway on every stage', STAGES.every(function (id) {
+  var l2 = E.buildLevel(id);
+  for (var ty = 9; ty <= 14; ty++) if (l2.tiles[ty * l2.w + 70] !== E.T.GATE) return false;
+  return true;
+}));
+ok('no moving platform sweeps through terrain', STAGES.every(function (id) {
+  var l2 = E.buildLevel(id);
+  function solid(x, y) {
+    if (x < 0 || x >= l2.w) return true;
+    if (y < 0 || y >= l2.h) return false;
+    return l2.tiles[y * l2.w + x] !== E.T.EMPTY;
+  }
+  return l2.platforms.every(function (p) {
+    var xs = [], ys = [];
+    if (p.axis === 'x') for (var x = p.min; x <= p.max; x += 2) xs.push(x); else xs.push(p.x);
+    if (p.axis === 'y') for (var y = p.min; y <= p.max; y += 2) ys.push(y); else ys.push(p.y);
+    for (var i = 0; i < xs.length; i++) for (var j = 0; j < ys.length; j++) {
+      var tx0 = Math.floor(xs[i] / TILE), tx1 = Math.floor((xs[i] + p.w - 0.01) / TILE);
+      var ty0 = Math.floor(ys[j] / TILE), ty1 = Math.floor((ys[j] + p.h - 0.01) / TILE);
+      for (var ty = ty0; ty <= ty1; ty++) for (var tx = tx0; tx <= tx1; tx++) if (solid(tx, ty)) return false;
+    }
+    return true;
+  });
+}));
+
+/* every stage mixes its own themed critter with the plain walker and the
+ * sheller, so the shell rule is on every map */
+var THEME = { izmir: 'icecream', nyc: 'hoodlum', istanbul: 'uncle', tampa: 'grump' };
+ok('each stage has themed, plain and shell critters', STAGES.every(function (id) {
+  var es = E.buildLevel(id).enemies;
+  var skins = es.map(function (e) { return e.skin || e.type; });
+  return skins.indexOf(THEME[id]) >= 0 && skins.indexOf('walker') >= 0 && skins.indexOf('sheller') >= 0;
+}), STAGES.map(function (id) { return E.buildLevel(id).enemies.map(function (e) { return e.skin || e.type; }).join(','); }));
+ok('themed pedestrians are tall enough to read as people', STAGES.every(function (id) {
+  return E.buildLevel(id).enemies.every(function (e) { return !e.skin || e.h === 14; });
+}));
 
 /* ---- run / skid / jump basics ---- */
 var st = game();
@@ -283,10 +339,94 @@ ok('snapshot round-trips positions', Math.abs(guest.players[0].x - host.players[
 });
 ok('snapshot round-trips tiles', JSON.stringify(guest.tiles) === JSON.stringify(host.tiles));
 
-/* ---- stages are labels only: same verified layout everywhere ---- */
-['izmir', 'nyc', 'istanbul', 'tampa'].forEach(function (id) {
-  var s = E.createGame({ mode: 'solo', soloColor: 'red', twoPlayer: false, stage: id });
-  ok('stage theme ' + id + ' keeps the same layout', JSON.stringify(s.tiles) === JSON.stringify(lvl.tiles));
+/* ---- an online pair builds the same stage on both ends ---- */
+ok('host and guest share the critter list on every stage', STAGES.every(function (id) {
+  var h = E.createGame({ mode: 'host', twoPlayer: true, stage: id });
+  var gst = E.createGame({ mode: 'guest', twoPlayer: true, stage: id });
+  if (h.enemies.length !== gst.enemies.length) return false;
+  if (h.stage !== gst.stage || h.stage !== id) return false;
+  E.applySnapshot(gst, E.makeSnapshot(h));
+  return Math.abs(gst.enemies[0].x - h.enemies[0].x) < 0.2;
+}));
+
+/* ---- each stage is walked from spawn to goal on paper ---- */
+/* A jump-aware flood fill over standable tiles: the player stands on a
+ * solid tile with two tiles of headroom, walks, drops off ledges and jumps
+ * up to 4 tiles up, 6 across and 7 down. Moving platforms count at every
+ * point of their travel. This is what catches a layout with a wall no
+ * jump can clear or a pit wider than a running jump. */
+function terrainSolid(l2, x, y) {
+  if (x < 0 || x >= l2.w) return true;
+  if (y < 0 || y >= l2.h) return false;
+  var v = l2.tiles[y * l2.w + x];
+  if (v === E.T.GATE) return false;      // the plates open it, so it is not a wall
+  return v !== E.T.EMPTY;
+}
+function goalReachable(id) {
+  var l2 = E.buildLevel(id);
+  var W = l2.w, H = l2.h;
+  var nodes = new Map();
+  function add(x, y) {
+    if (x < 0 || x >= W || y < 1 || y >= H) return;
+    if (terrainSolid(l2, x, y) || terrainSolid(l2, x, y - 1) || !terrainSolid(l2, x, y + 1)) return;
+    nodes.set(x + ',' + y, { x: x, y: y });
+  }
+  for (var yy = 0; yy < H; yy++) for (var xx = 0; xx < W; xx++) add(xx, yy);
+  l2.platforms.forEach(function (p) {
+    if (p.axis === 'y') {
+      for (var surf = Math.ceil(p.min / TILE); surf <= Math.floor(p.max / TILE); surf++) {
+        for (var x = Math.floor((p.x + 2) / TILE); x <= Math.floor((p.x + p.w - 2) / TILE); x++) {
+          if (!terrainSolid(l2, x, surf) && !terrainSolid(l2, x, surf - 1)) nodes.set(x + ',' + (surf - 1), { x: x, y: surf - 1 });
+        }
+      }
+    } else {
+      var sy = Math.round(p.y / TILE);
+      for (var sx = Math.floor(p.min / TILE); sx <= Math.floor((p.max + p.w) / TILE); sx++) {
+        if (!terrainSolid(l2, sx, sy) && !terrainSolid(l2, sx, sy - 1)) nodes.set(sx + ',' + (sy - 1), { x: sx, y: sy - 1 });
+      }
+    }
+  });
+  var start = nodes.get('3,14');
+  if (!start) return false;
+  var seen = new Set(['3,14']);
+  var q = [start];
+  while (q.length) {
+    var n = q.shift();
+    if (n.x >= 175 && n.y <= 9) return true;
+    var out = [];
+    [-1, 1].forEach(function (dx) {
+      for (var y = n.y - 1; y < n.y + 3; y++) {
+        if (nodes.has((n.x + dx) + ',' + y)) out.push(nodes.get((n.x + dx) + ',' + y));
+        if (terrainSolid(l2, n.x + dx, y)) break;
+      }
+      for (var y2 = n.y; y2 < H; y2++) {
+        if (nodes.has((n.x + dx) + ',' + y2)) { out.push(nodes.get((n.x + dx) + ',' + y2)); break; }
+        if (terrainSolid(l2, n.x + dx, y2)) break;
+      }
+    });
+    for (var dx2 = -6; dx2 <= 6; dx2++) {
+      if (!dx2) continue;
+      for (var dy = -4; dy <= 7; dy++) {
+        var x2 = n.x + dx2, y3 = n.y + dy;
+        var k = x2 + ',' + y3;
+        if (!nodes.has(k)) continue;
+        var top = Math.min(n.y, y3) - 1, clear = true;
+        for (var cx = Math.min(n.x, x2); cx <= Math.max(n.x, x2) && clear; cx++) {
+          for (var cy = top - 2; cy <= top; cy++) if (terrainSolid(l2, cx, cy)) { clear = false; break; }
+        }
+        if (clear) out.push(nodes.get(k));
+      }
+    }
+    out.forEach(function (m) {
+      var kk = m.x + ',' + m.y;
+      if (seen.has(kk)) return;
+      seen.add(kk); q.push(m);
+    });
+  }
+  return false;
+}
+STAGES.forEach(function (id) {
+  ok('stage ' + id + ' can be walked from spawn to goal', goalReachable(id));
 });
 
 /* ---- the run clock used by the summary ---- */
@@ -467,11 +607,16 @@ function inTerrain(g2, b) {
 var cm = game();
 ok('no critter spawns buried in the level', cm.enemies.every(function (e) { return !inTerrain(cm, e); }),
    { buried: cm.enemies.filter(function (e) { return inTerrain(cm, e); }).map(function (e) { return Math.round(e.x / TILE); }) });
-var terrace = cm.enemies.filter(function (e) { return e.x > 113 * TILE && e.x < 133 * TILE; });
-ok('the high-terrace pair spawns above the terrace block', terrace.length === 2, { n: terrace.length });
-stepN(cm, 30);
+ok('nothing starts buried on any of the four stages', STAGES.every(function (id) {
+  var g3 = game({ stage: id });
+  return g3.enemies.every(function (e) { return !inTerrain(g3, e); });
+}));
+var ist = game({ stage: 'istanbul' });
+var terrace = ist.enemies.filter(function (e) { return e.x > 113 * TILE && e.x < 133 * TILE; });
+ok('the İstanbul terrace pair spawns above the terrace block', terrace.length === 2, { n: terrace.length });
+stepN(ist, 30);
 ok('terrace critters land on the terrace top, not inside it', terrace.every(function (e) {
-  return Math.abs(e.y + e.h - 11 * TILE) < 0.6 && !inTerrain(cm, e);
+  return Math.abs(e.y + e.h - 11 * TILE) < 0.6 && !inTerrain(ist, e);
 }), { bottoms: terrace.map(function (e) { return e.y + e.h; }) });
 
 var cm2 = game({ mode: 'local', twoPlayer: true });
@@ -487,6 +632,18 @@ cm3.enemies[0].x = 5 * TILE; cm3.enemies[0].y = 16 * TILE;   // shoved into the 
 stepN(cm3, 1);
 ok('a critter shoved into terrain is lifted back out', !inTerrain(cm3, cm3.enemies[0]),
    { y: cm3.enemies[0].y, tile: Math.round(cm3.enemies[0].y / TILE) });
+
+/* ---- a themed pedestrian is a plain stompable walker ---- */
+var tp = game({ stage: 'istanbul' });
+tp.enemies.length = 0;
+var uncle = { type: 'walker', skin: 'uncle', x: 30 * TILE, y: 240 - 14, w: 14, h: 14, vx: -0.4, vy: 0, dir: -1, state: 'walk', timer: 0, dead: false, onGround: true };
+tp.enemies.push(uncle);
+var tpP = findPlayer(tp, 'red');
+tpP.x = uncle.x + 2; tpP.y = uncle.y - tpP.h + 1; tpP.vy = 3; tpP.invuln = 0;
+var tpScore = tp.score;
+stepN(tp, 1);
+ok('jumping on a themed pedestrian defeats it', uncle.dead === true && tp.score > tpScore, { dead: uncle.dead, score: tp.score - tpScore });
+ok('a themed pedestrian never becomes a shell', uncle.state === 'walk');
 
 /* ---- stomp -> shell -> kick keeps the shell silhouette ---- */
 var sh = game();

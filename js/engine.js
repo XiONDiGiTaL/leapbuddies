@@ -22,7 +22,238 @@
   /* ------------------------------------------------------------------ */
   /* Level construction (all layout is original, built from helpers)     */
   /* ------------------------------------------------------------------ */
-  function buildLevel() {
+  /* ------------------------------------------------------------------ */
+  /* Stage layouts                                                       */
+  /*                                                                    */
+  /* Each city gets its own terrain: beach steps in İzmir, alley towers  */
+  /* in New York, one long dome terrace in İstanbul, low dunes in Tampa. */
+  /* Four anchors never move, because netplay, the checkpoint and the    */
+  /* goal test depend on them: the gate tower at tx 70, the two floor    */
+  /* plates at 63 and 66, the midpoint flag at 92 and the goal plateau   */
+  /* from 169. Everything between those anchors is per-stage data, and   */
+  /* each stage mixes its own themed critters with the plain walker and  */
+  /* the sheller so the shell mechanic is on every map.                  */
+  /* ------------------------------------------------------------------ */
+  function row(list, x0, x1, ty) {
+    for (var x = x0; x <= x1; x++) list.push([x, ty]);
+  }
+  function dot(list, tx, ty) { list.push([tx, ty]); }
+
+  var KIND = { solid: T.SOLID, brick: T.BRICK, q: T.QBLOCK, p: T.PBLOCK };
+
+  var STAGE_LAYOUTS = {
+    /* İzmir — sunset coast. Wide beach, gentle stair steps down to the
+     * promenade, dondurma sellers working the crowd. */
+    izmir: function () {
+      var coins = [];
+      dot(coins, 8, 12); dot(coins, 9, 11); dot(coins, 10, 11); dot(coins, 11, 12);
+      row(coins, 24, 25, 13); dot(coins, 28, 10); dot(coins, 29, 10);
+      row(coins, 44, 46, 12);
+      row(coins, 56, 59, 12); row(coins, 59, 66, 6);
+      row(coins, 74, 79, 5); row(coins, 76, 80, 13);
+      dot(coins, 86, 10); dot(coins, 88, 8);
+      row(coins, 93, 95, 13);
+      row(coins, 115, 128, 9);
+      row(coins, 138, 141, 13);
+      row(coins, 170, 174, 7); dot(coins, 183, 7); dot(coins, 184, 7);
+      return {
+        grounds: [[0, 29], [34, 47], [53, 68], [69, 84], [90, 104], [135, 151], [156, 159]],
+        blocks: [
+          [17, 11, 1, 1, 'brick'], [18, 11, 1, 1, 'q'], [19, 11, 1, 1, 'brick'],
+          [20, 11, 1, 1, 'p'], [21, 11, 1, 1, 'brick'],
+          [26, 13, 2, 2], [28, 12, 2, 3],
+          [40, 11, 1, 1, 'q'], [41, 11, 1, 1, 'brick'], [42, 11, 1, 1, 'q'],
+          [56, 11, 2, 1], [58, 10, 2, 1],
+          [73, 7, 8, 1],
+          [86, 12, 2, 1], [88, 10, 2, 1],
+          [98, 11, 1, 1, 'brick'], [99, 11, 1, 1, 'q'], [100, 11, 1, 1, 'brick'],
+          [113, 12, 10, 6], [123, 13, 8, 5], [131, 14, 4, 4],
+          [144, 11, 1, 1, 'brick'], [145, 11, 1, 1, 'q'], [146, 11, 1, 1, 'brick'],
+          [160, 13, 3, 5], [163, 11, 3, 7], [166, 9, 3, 9]
+        ],
+        coins: coins,
+        enemies: [
+          { type: 'walker', tx: 14 },
+          { type: 'walker', skin: 'icecream', tx: 38 },
+          { type: 'sheller', tx: 57 },
+          { type: 'walker', skin: 'icecream', tx: 66 },
+          { type: 'walker', tx: 78 },
+          { type: 'walker', skin: 'icecream', tx: 96 },
+          { type: 'walker', tx: 116, ty: 11 },
+          { type: 'sheller', tx: 141 },
+          { type: 'walker', tx: 148 },
+          { type: 'walker', tx: 180, ty: 8 }
+        ],
+        platforms: [
+          [47 * TILE, 13 * TILE, 48, 8, 'x', 47 * TILE, 51 * TILE, 0.7],
+          [104.5 * TILE, 13 * TILE, 72, 8, 'y', 118, 232, 0.55],
+          [151 * TILE, 13 * TILE, 48, 8, 'x', 151 * TILE, 154 * TILE, 0.7]
+        ]
+      };
+    },
+
+    /* New York — midnight avenue. Stoop steps up front, then stacked
+     * alley towers to climb, with hoodlums loitering on the ledges. */
+    nyc: function () {
+      var coins = [];
+      dot(coins, 9, 12); dot(coins, 10, 11); dot(coins, 11, 11); dot(coins, 12, 12);
+      row(coins, 22, 23, 12);
+      dot(coins, 26, 10); dot(coins, 27, 10);
+      row(coins, 34, 36, 12);
+      row(coins, 38, 40, 10);
+      row(coins, 44, 46, 12);
+      row(coins, 56, 58, 10); row(coins, 59, 66, 6);
+      row(coins, 74, 79, 5); row(coins, 76, 80, 13);
+      dot(coins, 86, 10); dot(coins, 88, 8);
+      row(coins, 93, 95, 13);
+      row(coins, 114, 118, 8); row(coins, 120, 126, 10); row(coins, 128, 134, 12);
+      row(coins, 138, 141, 13);
+      row(coins, 170, 174, 7); dot(coins, 183, 7); dot(coins, 184, 7);
+      return {
+        grounds: [[0, 27], [32, 45], [53, 68], [69, 84], [90, 104], [135, 151], [156, 159]],
+        blocks: [
+          [15, 11, 1, 1, 'brick'], [16, 11, 1, 1, 'q'], [17, 11, 1, 1, 'brick'],
+          [18, 11, 1, 1, 'p'],
+          [24, 13, 3, 2], [38, 12, 2, 3],
+          [40, 11, 1, 1, 'q'], [41, 11, 1, 1, 'brick'], [42, 11, 1, 1, 'q'],
+          [56, 11, 2, 1], [58, 9, 2, 1],
+          [73, 7, 8, 1],
+          [86, 12, 2, 1], [88, 10, 2, 1],
+          [98, 11, 1, 1, 'brick'], [99, 11, 1, 1, 'q'], [100, 11, 1, 1, 'brick'],
+          [113, 10, 6, 8], [119, 12, 8, 6], [127, 14, 8, 4],
+          [144, 11, 1, 1, 'brick'], [145, 11, 1, 1, 'q'], [146, 11, 1, 1, 'brick'],
+          [160, 13, 3, 5], [164, 11, 3, 7], [167, 9, 2, 9]
+        ],
+        coins: coins,
+        enemies: [
+          { type: 'walker', skin: 'hoodlum', tx: 12 },
+          { type: 'sheller', tx: 22 },
+          { type: 'walker', skin: 'hoodlum', tx: 36 },
+          { type: 'walker', tx: 43 },
+          { type: 'walker', skin: 'hoodlum', tx: 57 },
+          { type: 'walker', tx: 66 },
+          { type: 'sheller', tx: 79 },
+          { type: 'walker', tx: 96 },
+          { type: 'walker', skin: 'hoodlum', tx: 116, ty: 8 },
+          { type: 'sheller', tx: 142 },
+          { type: 'walker', tx: 181, ty: 8 }
+        ],
+        platforms: [
+          [47 * TILE, 13 * TILE, 48, 8, 'x', 47 * TILE, 51 * TILE, 0.7],
+          [104.5 * TILE, 13 * TILE, 72, 8, 'y', 96, 232, 0.75],
+          [151 * TILE, 13 * TILE, 48, 8, 'x', 151 * TILE, 154 * TILE, 0.7]
+        ]
+      };
+    },
+
+    /* İstanbul — dusk over the strait. One long terrace high above the
+     * street, patrolled by moustachioed uncles with flat caps. */
+    istanbul: function () {
+      var coins = [];
+      dot(coins, 8, 12); dot(coins, 9, 11); dot(coins, 10, 11); dot(coins, 11, 12);
+      row(coins, 24, 25, 13); dot(coins, 28, 10); dot(coins, 29, 10);
+      row(coins, 44, 46, 12);
+      row(coins, 56, 59, 12); row(coins, 59, 66, 6);
+      row(coins, 74, 79, 5); row(coins, 76, 80, 13);
+      dot(coins, 86, 10); dot(coins, 88, 8);
+      row(coins, 93, 95, 13);
+      row(coins, 115, 128, 9);
+      row(coins, 138, 141, 13);
+      row(coins, 170, 174, 7); dot(coins, 183, 7); dot(coins, 184, 7);
+      return {
+        grounds: [[0, 29], [34, 46], [53, 68], [69, 84], [90, 104], [135, 151], [156, 159]],
+        blocks: [
+          [17, 11, 1, 1, 'brick'], [18, 11, 1, 1, 'q'], [19, 11, 1, 1, 'brick'],
+          [20, 11, 1, 1, 'p'], [21, 11, 1, 1, 'brick'],
+          [26, 13, 2, 2], [28, 12, 2, 3],
+          [40, 11, 1, 1, 'q'], [41, 11, 1, 1, 'brick'], [42, 11, 1, 1, 'q'],
+          [56, 11, 2, 1],
+          [73, 7, 8, 1],
+          [86, 12, 2, 1], [88, 10, 2, 1],
+          [98, 11, 1, 1, 'brick'], [99, 11, 1, 1, 'q'], [100, 11, 1, 1, 'brick'],
+          [113, 11, 20, 7], [133, 13, 2, 5],
+          [144, 11, 1, 1, 'brick'], [145, 11, 1, 1, 'q'], [146, 11, 1, 1, 'brick'],
+          [160, 13, 3, 5], [163, 11, 3, 7], [166, 9, 3, 9]
+        ],
+        coins: coins,
+        enemies: [
+          { type: 'walker', skin: 'uncle', tx: 15 },
+          { type: 'sheller', tx: 24 },
+          { type: 'walker', skin: 'uncle', tx: 38 },
+          { type: 'walker', tx: 57 },
+          { type: 'walker', tx: 66 },
+          { type: 'sheller', tx: 79 },
+          { type: 'walker', skin: 'uncle', tx: 96 },
+          { type: 'walker', tx: 118, ty: 10 },
+          { type: 'walker', tx: 124, ty: 10 },
+          { type: 'sheller', tx: 142 },
+          { type: 'walker', tx: 180, ty: 8 }
+        ],
+        platforms: [
+          [47 * TILE, 13 * TILE, 48, 8, 'x', 47 * TILE, 51 * TILE, 0.7],
+          [104.5 * TILE, 13 * TILE, 72, 8, 'y', 118, 232, 0.45],
+          [151 * TILE, 13 * TILE, 48, 8, 'x', 151 * TILE, 154 * TILE, 0.7]
+        ]
+      };
+    },
+
+    /* Tampa — sunny palms. Low sandy dunes, a slow ferry across the hole
+     * in the pavement, grumpy retirees out for a walk. */
+    tampa: function () {
+      var coins = [];
+      dot(coins, 8, 12); dot(coins, 9, 11); dot(coins, 10, 11); dot(coins, 11, 12);
+      row(coins, 22, 24, 13); dot(coins, 28, 10); dot(coins, 29, 10);
+      row(coins, 44, 46, 12);
+      row(coins, 56, 59, 12); row(coins, 60, 66, 6);
+      row(coins, 74, 79, 5); row(coins, 76, 80, 13);
+      dot(coins, 86, 10); dot(coins, 88, 8);
+      row(coins, 93, 95, 13);
+      row(coins, 114, 120, 10); row(coins, 122, 127, 12); row(coins, 129, 134, 10);
+      row(coins, 138, 141, 13);
+      row(coins, 170, 174, 7); dot(coins, 183, 7); dot(coins, 184, 7);
+      return {
+        grounds: [[0, 30], [33, 47], [53, 68], [69, 84], [90, 104], [135, 151], [156, 159]],
+        blocks: [
+          [17, 11, 1, 1, 'brick'], [18, 11, 1, 1, 'q'], [19, 11, 1, 1, 'brick'],
+          [20, 11, 1, 1, 'p'],
+          [26, 13, 2, 2], [28, 12, 2, 3],
+          [40, 11, 1, 1, 'q'], [41, 11, 1, 1, 'brick'], [42, 11, 1, 1, 'q'],
+          [56, 11, 2, 1], [58, 10, 3, 1],
+          [73, 7, 8, 1],
+          [86, 12, 2, 1], [88, 10, 2, 1],
+          [96, 12, 4, 1],
+          [98, 11, 1, 1, 'brick'], [99, 11, 1, 1, 'q'], [100, 11, 1, 1, 'brick'],
+          [113, 12, 8, 6], [121, 14, 7, 4], [128, 12, 7, 6],
+          [144, 10, 2, 1],
+          [160, 13, 3, 5], [164, 11, 3, 7], [167, 9, 2, 9]
+        ],
+        coins: coins,
+        enemies: [
+          { type: 'walker', skin: 'grump', tx: 16 },
+          { type: 'walker', tx: 23 },
+          { type: 'sheller', tx: 39 },
+          { type: 'walker', skin: 'grump', tx: 44 },
+          { type: 'walker', tx: 57 },
+          { type: 'walker', skin: 'grump', tx: 66 },
+          { type: 'sheller', tx: 79 },
+          { type: 'walker', tx: 98 },
+          { type: 'walker', skin: 'grump', tx: 115, ty: 11 },
+          { type: 'sheller', tx: 143 },
+          { type: 'walker', tx: 181, ty: 8 }
+        ],
+        platforms: [
+          [47 * TILE, 13 * TILE, 48, 8, 'x', 47 * TILE, 51 * TILE, 0.7],
+          [104 * TILE, 13 * TILE, 56, 8, 'x', 104 * TILE, 109 * TILE, 0.9],
+          [151 * TILE, 13 * TILE, 48, 8, 'x', 151 * TILE, 154 * TILE, 0.7]
+        ]
+      };
+    }
+  };
+
+  /* ------------------------------------------------------------------ */
+  /* Level construction                                                  */
+  /* ------------------------------------------------------------------ */
+  function buildLevel(stage) {
     var g = new Uint8Array(LEVEL_W * LEVEL_H);
     function rect(tx, ty, w, h, v) {
       for (var y = ty; y < ty + h; y++) for (var x = tx; x < tx + w; x++) {
@@ -30,88 +261,43 @@
       }
     }
     function ground(x0, x1) { rect(x0, 15, x1 - x0 + 1, 3, T.SOLID); }
-
-    ground(0, 29);            // A: start meadow
-    ground(34, 47);           // B
-    ground(53, 68);           // C: switch field
-    ground(69, 84);           // D: beyond the gate
-    ground(90, 104);          // E: midpoint flats
-    rect(113, 11, 20, 7, T.SOLID); // F: high terrace (top row 11)
-    rect(133, 13, 2, 5, T.SOLID);  // step down
-    ground(135, 151);         // G: sprint flats
-    ground(156, 159);         // G2 landing
-    rect(160, 13, 3, 5, T.SOLID);  // climb steps
-    rect(163, 11, 3, 7, T.SOLID);
-    rect(166, 9, 3, 9, T.SOLID);
-    rect(169, 9, 31, 9, T.SOLID);  // goal plateau (top row 9)
-
-    // gate tower at x=70 (rows 9..14), blocks the walkway on segment D
+    var pick = STAGE_LAYOUTS[stage] ? stage : 'izmir';
+    var plan = STAGE_LAYOUTS[pick]();
+    for (var gi = 0; gi < plan.grounds.length; gi++) ground(plan.grounds[gi][0], plan.grounds[gi][1]);
+    for (var bi = 0; bi < plan.blocks.length; bi++) {
+      var b = plan.blocks[bi];
+      rect(b[0], b[1], b[2], b[3], KIND[b[4]] || T.SOLID);
+    }
+    /* the gate tower and the goal plateau are shared anchors, not
+     * per-stage terrain: the switch/gate rule and the goal test need them */
     rect(70, 9, 1, 6, T.GATE);
-
-    // start-area blocks
-    rect(17, 11, 1, 1, T.BRICK); rect(18, 11, 1, 1, T.QBLOCK);
-    rect(19, 11, 1, 1, T.BRICK); rect(20, 11, 1, 1, T.PBLOCK);
-    rect(21, 11, 1, 1, T.BRICK);
-    // start columns
-    rect(26, 13, 2, 2, T.SOLID); rect(28, 12, 2, 3, T.SOLID);
-    // B blocks
-    rect(40, 11, 1, 1, T.QBLOCK); rect(41, 11, 1, 1, T.BRICK); rect(42, 11, 1, 1, T.QBLOCK);
-    // C: step block + co-op bonus ledge (needs a partner head-bounce)
-    rect(56, 11, 2, 1, T.SOLID);
-    rect(73, 7, 8, 1, T.SOLID);
-    // E blocks
-    rect(98, 11, 1, 1, T.BRICK); rect(99, 11, 1, 1, T.QBLOCK); rect(100, 11, 1, 1, T.BRICK);
-    // stepping blocks over the pit between D and E
-    rect(86, 12, 2, 1, T.SOLID); rect(88, 10, 2, 1, T.SOLID);
-    // G blocks
-    rect(144, 11, 1, 1, T.BRICK); rect(145, 11, 1, 1, T.QBLOCK); rect(146, 11, 1, 1, T.BRICK);
-
-    var coins = [];
-    function coin(tx, ty) { coins.push({ x: tx * TILE + 3, y: ty * TILE + 3, taken: false }); }
-    function coinRow(x0, x1, ty) { for (var x = x0; x <= x1; x++) coin(x, ty); }
-    coin(8, 12); coin(9, 11); coin(10, 11); coin(11, 12);      // start arc
-    coinRow(24, 25, 13); coin(28, 10); coin(29, 10);
-    coinRow(44, 46, 12);
-    coinRow(56, 59, 12); coinRow(59, 66, 6);                    // ledge coins
-    coinRow(74, 79, 5);                                          // co-op ledge coins
-    coinRow(76, 80, 13);
-    coin(86, 10); coin(88, 8);
-    coinRow(93, 95, 13);
-    coinRow(115, 128, 8);                                        // terrace coins (some)
-    coins = coins.filter(function (c, i) { return i % 1 === 0; });
-    coinRow(138, 141, 13);
-    coinRow(170, 174, 7);
-    coin(183, 7); coin(184, 7);
-
-    /* ty is the spawn row of the critter's FEET-side top, held one tile
-     * above the surface it should land on. The terrace pair sits on the
-     * high block (top row 11) instead of at ground level, which is inside
-     * that block: they used to spawn buried in the terrace wall. */
-    var enemies = [
-      { type: 'walker', tx: 14 }, { type: 'sheller', tx: 38 },
-      { type: 'walker', tx: 57 }, { type: 'walker', tx: 78 },
-      { type: 'sheller', tx: 96 },
-      { type: 'walker', tx: 118, ty: 10 }, { type: 'walker', tx: 124, ty: 10 },
-      { type: 'sheller', tx: 142 },
-      { type: 'walker', tx: 148 }, { type: 'walker', tx: 180, ty: 8 }
-    ].map(function (e) {
+    rect(169, 9, LEVEL_W - 169, 9, T.SOLID);
+    var coins = plan.coins.map(function (c) {
+      return { x: c[0] * TILE + 3, y: c[1] * TILE + 3, taken: false };
+    });
+    var enemies = plan.enemies.map(function (e) {
+      var tall = e.type === 'sheller' || !!e.skin;
       return {
-        type: e.type, x: e.tx * TILE + 1, y: ((e.ty != null ? e.ty : 13)) * TILE,
-        w: 14, h: e.type === 'walker' ? 12 : 14,
+        type: e.type, skin: e.skin || '',
+        x: e.tx * TILE + 1, y: (e.ty != null ? e.ty : 13) * TILE,
+        w: 14, h: tall ? 14 : 12,
         vx: -0.45, vy: 0, dir: -1, state: 'walk', timer: 0, dead: false, onGround: false
       };
     });
-
     return {
-      w: LEVEL_W, h: LEVEL_H, tiles: g,
+      w: LEVEL_W, h: LEVEL_H, tiles: g, stage: pick,
       coins: coins, enemies: enemies,
-      switches: [{ tx: 63, ty: 14, pressed: false }, { tx: 66, ty: 14, pressed: false }],
-      gateTx: 70,
-      platforms: [
-        { x: 47 * TILE, y: 13 * TILE, w: 48, h: 8, axis: 'x', min: 47 * TILE, max: 51 * TILE, speed: 0.7, dir: 1, dx: 0, dy: 0 },
-        { x: 104.5 * TILE, y: 13 * TILE, w: 72, h: 8, axis: 'y', min: 118, max: 232, speed: 0.55, dir: 1, dx: 0, dy: 0 },
-        { x: 151 * TILE, y: 13 * TILE, w: 48, h: 8, axis: 'x', min: 151 * TILE, max: 154 * TILE, speed: 0.7, dir: 1, dx: 0, dy: 0 }
+      switches: [
+        { tx: 63, ty: 14, pressed: false },
+        { tx: 66, ty: 14, pressed: false }
       ],
+      gateTx: 70,
+      platforms: plan.platforms.map(function (p) {
+        return {
+          x: p[0], y: p[1], w: p[2], h: p[3], axis: p[4], min: p[5], max: p[6],
+          speed: p[7], dir: 1, dx: 0, dy: 0
+        };
+      }),
       midpointTx: 92, goalTx: 176, goalTopTy: 9
     };
   }
@@ -133,7 +319,7 @@
   // opts: { mode: 'solo'|'local'|'host'|'guest', soloColor: 'red'|'green', twoPlayer: bool }
   function createGame(opts) {
     opts = opts || {};
-    var level = buildLevel();
+    var level = buildLevel(opts.stage || 'izmir');
     var two = opts.twoPlayer !== false && opts.mode !== 'solo';
     var players;
     if (opts.mode === 'solo') {
@@ -146,7 +332,7 @@
       players = [makePlayer(0, 'red', 2), makePlayer(1, 'green', 4)];
     }
     var st = {
-      mode: opts.mode || 'local', twoPlayer: two, stage: opts.stage || 'izmir',
+      mode: opts.mode || 'local', twoPlayer: two, stage: level.stage,
       tick: 0, tiles: level.tiles, baseTiles: level.tiles.slice(),
       levelW: level.w, levelH: level.h,
       coinsArr: level.coins, enemies: level.enemies,

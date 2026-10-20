@@ -564,10 +564,67 @@
   /* ------------------------------------------------------------------ */
   /* Enemies, pickups and props                                          */
   /* ------------------------------------------------------------------ */
-  function makeEnemy(type) {
+  /* Themed pedestrians. Each city staffs its map with people who belong
+   * there; every one of them is a stompable walker, and the green sheller
+   * stays on every stage so the shell mechanic is always taught. Colours
+   * are fixed (not per-stage) so a critter reads the same from either
+   * palette. */
+  var CRITTERS = {
+    uncle: { skin: 0xd9a273, shirt: 0xf1e7d2, coat: 0x33405a, legs: 0x3a3f4a, hat: 0x8d2f2f, hair: 0x241a12, feet: 0x2b2620 },
+    icecream: { skin: 0xdfb089, shirt: 0xc4362c, coat: 0xc4362c, legs: 0x2f3340, hat: 0xc4362c, hair: 0x2a2118, feet: 0x24252b },
+    hoodlum: { skin: 0xcf9d73, shirt: 0x3b4358, coat: 0x272d3a, legs: 0x2b303c, hat: 0x1d222c, hair: 0x161a22, feet: 0x191d24 },
+    grump: { skin: 0xe4bd97, shirt: 0xd7ccdf, coat: 0x9c8cb5, legs: 0x54506a, hat: 0xdadada, hair: 0xd0d0d0, feet: 0x4a4356 }
+  };
+
+  function critterParts(c, skin) {
+    var p = [
+      [-3.1, 1.5, 0, 4.4, 2.8, 5, c.legs],
+      [3.1, 1.5, 0, 4.4, 2.8, 5, c.legs],
+      [-3.1, 0.4, 0.5, 4.6, 1.6, 5.8, c.feet],
+      [3.1, 0.4, 0.5, 4.6, 1.6, 5.8, c.feet],
+      [0, 5.4, 0, 9.6, 5.4, 6.2, c.shirt],
+      [-5.4, 5.2, 0, 2.4, 4.4, 4.6, c.shirt],
+      [5.4, 5.2, 0, 2.4, 4.4, 4.6, c.shirt],
+      [0, 10.5, 0, 8.2, 5.2, 8, c.skin],
+      [-2, 11, 4.2, 1.3, 1.5, 0.5, 0x241a12],
+      [2, 11, 4.2, 1.3, 1.5, 0.5, 0x241a12]
+    ];
+    if (skin === 'uncle') {
+      p.push([0, 5.6, 3.1, 8.2, 4.8, 1.2, c.coat]);        // waistcoat
+      p.push([0, 13.2, 0, 9.4, 1.7, 9, c.hat]);             // flat cap
+      p.push([0, 12.4, 4.4, 9.4, 0.8, 3.2, c.hat]);         // peak
+      p.push([-2.1, 9.4, 4.2, 3.1, 1.1, 0.9, c.hair]);      // handlebar moustache
+      p.push([2.1, 9.4, 4.2, 3.1, 1.1, 0.9, c.hair]);
+    } else if (skin === 'icecream') {
+      p.push([0, 5.6, 3.1, 7.6, 4.6, 1.2, 0xfbf8f1]);       // apron
+      p.push([0, 13.1, 0, 8.8, 1.9, 8.6, c.hat]);           // red fez
+      p.push([6.5, 9.4, 1, 3, 2.8, 3, 0xd6b487]);           // cone in hand
+      p.push([6.5, 12, 1, 3.2, 3.4, 3.2, 0xfaf6ee]);        // dondurma
+      p.push([6.5, 14, 1, 2.8, 1.2, 2.8, 0xffffff]);
+    } else if (skin === 'hoodlum') {
+      p.push([0, 11, -2.6, 10.6, 7, 6, c.coat]);            // hood behind
+      p.push([0, 13.3, 0, 9.2, 2.2, 8.6, c.hat]);           // beanie
+      p.push([0, 11.1, 4.2, 7.4, 1.2, 0.6, 0x0f1218]);      // shades
+      p.push([5.8, 3.4, 2.4, 2.4, 2.6, 2.4, 0xb9bdc4]);     // spray can
+      p.push([5.8, 4.9, 2.4, 1.4, 0.8, 1.4, 0xc4362c]);
+    } else if (skin === 'grump') {
+      p.push([0, 5.4, 3.1, 8.6, 5, 1.2, c.coat]);           // cardigan
+      p.push([-4.4, 11.6, 0, 2.6, 2.4, 7, c.hair]);
+      p.push([4.4, 11.6, 0, 2.6, 2.4, 7, c.hair]);
+      p.push([0, 13.2, 0, 8.4, 1.6, 8, c.hat]);
+      p.push([0, 10.8, 4.2, 7, 1.2, 0.6, 0x1b1b1b]);        // glasses
+      p.push([6.6, 4.6, 2.2, 1.3, 8.6, 1.3, 0x6b4a2f]);     // cane
+      p.push([5.7, 8.9, 2.2, 2.4, 1.2, 1.2, 0x6b4a2f]);
+    }
+    return p;
+  }
+
+  function makeEnemy(type, skin) {
     var root = new THREE.Group();
+    var c = skin ? CRITTERS[skin] : null;
     var body = meshOf(
-      type === 'sheller'
+      c ? critterParts(c, skin)
+        : type === 'sheller'
         ? [
           [0, 7, 0, 14, 8, 14, 0x3f7d52],
           [0, 11, 0, 10, 3.4, 10, 0x51a065],
@@ -591,7 +648,7 @@
         ]
     );
     root.add(body);
-    root.userData.critter = type;
+    root.userData.critter = skin || type;
     /* a geometry (not a mesh) so it can be swapped onto the body mesh.
      * A stomped critter keeps this low shell silhouette while it sits and
      * while it slides, so kicking one never pops it back into a full body. */
@@ -600,7 +657,7 @@
       [0, 7.5, 0, 9, 2.4, 9, type === 'sheller' ? 0x51a065 : 0xbd4f36],
       [0, 2, 0, 15, 1.6, 15, 0xd9c9a0]
     ]);
-    return { root: root, body: body, type: type, shell: null, shellGeo: shellGeo, walkGeo: body.geometry };
+    return { root: root, body: body, type: type, skin: skin || '', shell: null, shellGeo: shellGeo, walkGeo: body.geometry };
   }
 
   /* a chunky crescent so it still reads while it spins */
@@ -777,10 +834,11 @@
     function ensureEnemies(list) {
       for (var i = 0; i < list.length; i++) {
         var want = list[i].type === 'sheller' ? 'sheller' : 'walker';
+        var wantSkin = list[i].skin || '';
         var have = enemies[i];
-        if (have && have.type === want) continue;
+        if (have && have.type === want && have.skin === wantSkin) continue;
         if (have) scene.remove(have.root);
-        var m = makeEnemy(want);
+        var m = makeEnemy(want, wantSkin);
         m.root.visible = false;
         scene.add(m.root);
         enemies[i] = m;

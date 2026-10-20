@@ -72,7 +72,13 @@ on their own keyboard at a glance.
 
 ![A desktop view at the original fixed framing](shots/zoom-desktop.png)
 
-![Two critters patrolling the top of the high terrace, level with the player](shots/critters-terrace2.png)
+![İzmir: beach steps and stair-stepped promenade, with a dondurma seller on each side](shots/stage-izmir.png)
+
+![New York: the tiered alley towers, patrolled by hoodlums in beanies](shots/stage-nyc.png)
+
+![İstanbul: the long high terrace, with moustachioed uncles in flat caps](shots/stage-istanbul.png)
+
+![Tampa: low dunes with a slow ferry, and grumpy retirees with canes](shots/stage-tampa.png)
 
 ![A kicked shell sliding along the ground as a shell, not a full critter](shots/shell-slide.png)
 
@@ -101,7 +107,9 @@ on their own keyboard at a glance.
   the player in front.
 - **Bananas and jars.** Bananas are scattered through every stage; gold
   blocks pay out when bumped from below; jars grant the second heart.
-- **Critters.** A stomp kills a walker. A sheller curls into a low shell
+- **Critters.** Each city walks its own cast — dondurma sellers, hoodlums,
+  moustachioed uncles, grumpy retirees — mixed in with the plain walker.
+  All of them are stompable. A sheller curls into a low shell
   instead: touch it and it slides, taking out anything it hits, and it
   wakes back up after eight seconds. Both kinds patrol their own piece of
   ground and turn at ledges, and a critter is always standing on the level —
@@ -136,16 +144,24 @@ records simply do not persist.
 
 ## The four cities
 
-Each stage is its own palette, skyline and music loop. All four share one
-verified level layout, so online sessions, checkpoints and timing behave
-identically wherever you play.
+Each stage has its own palette, skyline, music loop, **terrain and cast**.
+Only the four anchors are shared — the gate at x=70 with its two floor
+plates before it, the midpoint flag at x=92 and the goal plateau at x=169 —
+so the gate rule, the checkpoint and the finish behave the same everywhere
+while the run itself plays differently.
 
-| Stage | Look | Music |
-|---|---|---|
-| **İzmir** | sunset coast, terracotta blocks, minarets | bright bouncy loop in C |
-| **New York** | midnight avenue, lit towers | walking bass, off-beat lead, kick + snare |
-| **İstanbul** | dusk over the strait, domes and minarets | harmonic-minor melody over dum/tek percussion |
-| **Tampa** | sunny palms, low teal skyline | 80s summer pop — straight beat, gated stabs |
+| Stage | Terrain | Critters | Look & music |
+|---|---|---|---|
+| **İzmir** | wide beach, stair-stepped promenade that walks *down* to the checkpoint | dondurma sellers (white apron, tall cone), plain walkers, shellers | sunset coast, minarets; bright bouncy loop in C |
+| **New York** | stoops up front, then three stacked alley towers to climb and drop | hoodlums in beanies and shades, plain walkers, shellers | midnight avenue, lit towers; walking bass and kick + snare |
+| **İstanbul** | one long high terrace over the street, reached by a slow lift | moustachioed uncles in flat caps, plain walkers, shellers | dusk over the strait, domes; harmonic-minor melody over dum/tek |
+| **Tampa** | low dunes and a slow ferry across the hole in the pavement | grumpy retirees with canes and glasses, plain walkers, shellers | sunny palms, teal skyline; 80s summer pop |
+
+The cast is built from the same boxes as everything else: each themed
+critter is a stompable walker with its own silhouette (a cone, a flat cap
+and moustache, a hoodie and spray can, a cane) so you can tell what is in
+front of you at a glance. The green sheller is on every map, so the
+stomp → shell → kick rule is always taught.
 
 The music is synthesised at runtime by a tiny WebAudio step sequencer:
 one lead line, one bass line and a three-piece drum kit per stage, at most
@@ -170,6 +186,12 @@ one lead line, one bass line and a three-piece drum kit per stage, at most
 - **No accounts, no server.** Rooms are name-based channels on a public
   relay; records live in `localStorage`. Nothing to sign up for, nothing to
   leak, nothing to pay for.
+- **Four cities, four levels.** A palette swap is not a new stage. Each
+  city gets its own terrain silhouette and its own people, while the gate,
+  checkpoint and goal stay at the same coordinates so every rule and the
+  online sync behave identically wherever you play. The layouts are data in
+  [js/engine.js](js/engine.js), and a headless flood fill proves each one can
+  be walked from spawn to goal before it ships.
 - **Two languages, equal.** Turkish is a first-class language here, not a
   translation layer bolted on: stage names, tags and summaries are written
   in both.
@@ -302,24 +324,34 @@ needs an `https://` or `localhost` origin for the WebSocket and clipboard.
 node tests/smoke-node.js
 ```
 
-114 headless checks: level data, movement, gate (solo and two-plate forms),
+125 headless checks: level data, movement, gate (solo and two-plate forms),
 head bounce, jars, checkpoints, goal, the full lives model (solo deaths,
 three-strike game over, co-op bubbles, partner-down team wipes, timeout,
 respawn hearts, death pop placement), the camera split and catch-up
 bubble, snapshot round trips, the abusive-input fuzz run, the four stage
-themes, the run clock, the local records (first clear, weaker runs,
+layouts and casts, the run clock, the local records (first clear, weaker runs,
 score-only game overs, separate rows per stage and mode, fastest-clears-only
 times, and the storage key), the translation tables (every English key has a
 Turkish one, and every `data-i18n` hook in the page and every `T()` key used
 by the UI resolves), the volume range, and the camera framing (desktop stays
 at zoom 1, a phone zooms in until the buddy is 26 px tall, a split pair stays
 whole in frame, the frame never leaves the level, and `zoom: false` restores
-the fixed view). The critter pass covers spawns (nothing starts inside
-terrain, the terrace pair stands on the terrace), a fifteen-second patrol
-with no critter ending up buried or outside the level, recovery when one is
-shoved into the ground, and the stomp → shell → slide cycle (the shell keeps
-its low body when kicked, bounces off walls instead of disappearing, and
-wakes back up).
+the fixed view). The stage pass checks that all four layouts are 200 × 18,
+differ from each other, keep the plates, gate, midpoint and goal anchors,
+carry 50–85 bananas and 8–12 critters, that every map mixes its themed
+critter with the plain walker and the sheller, that the gate tiles really
+block the walkway, that no moving platform sweeps through terrain, and —
+most importantly — that a jump-aware flood fill can walk from the spawn to
+the goal plateau on every one of the four maps (4 tiles up, 6 across, 7
+down, platforms counted along their whole travel). A host and a guest are
+also built on each stage to confirm both ends get the same critter list
+for the snapshot stream. The critter pass covers
+spawns (nothing starts inside terrain on any stage, the İstanbul terrace
+pair stands on the terrace), a fifteen-second patrol with no critter ending
+up buried or outside the level, recovery when one is shoved into the ground,
+that a stomped pedestrian dies instead of shelling, and the stomp → shell →
+slide cycle (the shell keeps its low body when kicked, bounces off walls
+instead of disappearing, and wakes back up).
 
 Rendering, the how-to-play keycaps, local 2P and online co-op are verified
 in a browser: two tabs, invite link, ready, start, guest input, carry
@@ -331,7 +363,13 @@ driven with real pointer events to confirm move, jump and run, and the
 volume slider is checked across a reload. The zoom is measured at 1200,
 768, 390 and 360 CSS pixels and with the pair 240 units apart: desktop and
 tablet stay at the fixed framing, the phone frames render the buddy at
-26 px, and both buddies remain inside the canvas when they split.## Deploying
+26 px, and both buddies remain inside the canvas when they split. Each of
+the four stages is loaded in the browser and checked for its own terrain
+silhouette and its own cast: the themed meshes are built per critter (a
+dondurma vendor is not a recoloured walker), draw calls stay near 20–25 and
+the scene near 30k triangles, with no console errors.
+
+## Deploying
 
 This repository **is** the deployment. There is no build step, no output
 directory and no server-side code: GitHub Pages serves the repository root
