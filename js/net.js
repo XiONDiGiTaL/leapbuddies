@@ -6,8 +6,9 @@
  * Public interface (unchanged): Net.makeCode(), Net.host(code, cbs),
  * Net.join(code, cbs), Net.libReady(). Callbacks: onOpen, onGuest,
  * onData, onClose, onError. Returned handle: send(obj), isOpen(), close().
- * Rooms are channels named uxs3-<CODE>; app messages ride as broadcast
- * payloads tagged with the sender side. */
+ * Rooms are channels named uxs3-<CODE> (a stable internal namespace, kept
+ * so older links still join the same channels); app messages ride as
+ * broadcast payloads tagged with the sender side. */
 (function (global) {
   'use strict';
 

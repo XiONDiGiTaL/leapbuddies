@@ -1,21 +1,36 @@
-/* main.js — boot, lobby UI, game loop, rendering, netplay glue.
+/* main.js — boot, lobby UI, game loop and netplay glue.
  * Roles: 'solo' | 'local' | 'host' | 'guest'.
- * Characters live in fixed slots: slot 0 = Red, slot 1 = Green.
- * Picks only decide WHO CONTROLS each slot. */
+ * Characters live in fixed slots: slot 0 = S.C. (red), slot 1 = B.T. (green).
+ * Picks only decide WHO CONTROLS each slot. Simulation lives in engine.js,
+ * drawing lives in render3d.js. */
 (function () {
   'use strict';
-  var E = window.Engine, S = window.Sprites, Net = window.Net, Sfx = window.Sfx;
-  var TILE = E.TILE, VIEW_W = E.VIEW_W, VIEW_H = E.VIEW_H;
+  var E = window.Engine, Net = window.Net, Sfx = window.Sfx, R = window.Render3D;
+  var Best = window.Best;                 // local bests (js/progress.js)
+  var I18n = window.I18n;                 // EN/TR strings (js/i18n.js)
+  var TILE = E.TILE;
 
   function $(id) { return document.getElementById(id); }
-  var canvas = $('stage'), ctx = canvas.getContext('2d');
-  ctx.imageSmoothingEnabled = false;
+  function T(k, v) { return I18n ? I18n.t(k, v) : k; }
+
+  var canvas = $('stage');
+  var renderer = (R && R.createRenderer) ? R.createRenderer(canvas) : null;
+  var STEP = 1 / 60;
+
+  var STAGE_NAMES = {};
+  if (R && R.STAGES) R.STAGES.forEach(function (s) { STAGE_NAMES[s.id] = s.name; });
+  function stageName(id) {
+    if (I18n) { var loc = I18n.stageName(id); if (loc !== id) return loc; }
+    return STAGE_NAMES[id] || 'İzmir';
+  }
 
   /* ---------------- global ui state ---------------- */
   var view = 'menu';               // menu | lobby | game
   var role = null;                 // solo | local | host | guest
   var myPick = 'red';
+  var myStage = 'izmir';
   var otherColor = function (c) { return c === 'red' ? 'green' : 'red'; };
+  var colorName = function (c) { return c === 'red' ? 'S.C.' : 'B.T.'; };
   var mySlot = function () { return myPick === 'red' ? 0 : 1; };
 
   var state = null;                // authoritative state (solo/local/host)
@@ -23,10 +38,9 @@
   var running = false;
   var net = null;
   var roomCode = null;
+  var finishShown = false;
 
-  // host lobby state
   var hostLobby = { guestIn: false, guestPick: null, guestAssigned: null, guestReady: false, myReady: false };
-  // guest lobby state (mirrors host broadcasts)
   var guestLobby = { hostPick: 'red', assigned: 'green', hostReady: false, myReady: false, started: false };
 
   var guestInput = E.EMPTY_INPUT, guestInputAt = 0;
@@ -41,10 +55,16 @@
   window.addEventListener('keydown', function (e) {
     if (view === 'game' && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].indexOf(e.code) >= 0) e.preventDefault();
     keys[e.code] = true;
-    if (e.code === 'KeyM') toggleMute();
+    if (e.code === 'KeyM' && view === 'game') toggleMute();
     Sfx.unlock();
   });
   window.addEventListener('keyup', function (e) { keys[e.code] = false; });
+  window.addEventListener('blur', function () {
+    keys = {};
+    touchKeys = { l: false, r: false, u: false, d: false, run: false };
+    var held = document.querySelectorAll('.tbtn.held');
+    for (var i = 0; i < held.length; i++) held[i].classList.remove('held');
+  });
 
   function padInput() {
     var out = { l: false, r: false, u: false, d: false, run: false };
@@ -53,8 +73,8 @@
       for (var i = 0; i < pads.length; i++) {
         var g = pads[i]; if (!g) continue;
         var ax = g.axes[0] || 0;
-        if (g.buttons[14] && g.buttons[14].pressed || ax < -0.4) out.l = true;
-        if (g.buttons[15] && g.buttons[15].pressed || ax > 0.4) out.r = true;
+        if ((g.buttons[14] && g.buttons[14].pressed) || ax < -0.4) out.l = true;
+        if ((g.buttons[15] && g.buttons[15].pressed) || ax > 0.4) out.r = true;
         if ((g.buttons[0] && g.buttons[0].pressed) || (g.buttons[12] && g.buttons[12].pressed)) out.u = true;
         if (g.buttons[13] && g.buttons[13].pressed) out.d = true;
         if ((g.buttons[2] && g.buttons[2].pressed) || (g.buttons[5] && g.buttons[5].pressed)) out.run = true;
@@ -64,12 +84,15 @@
     return out;
   }
   function merge(a, b) { return { l: a.l || b.l, r: a.r || b.r, u: a.u || b.u, d: a.d || b.d, run: a.run || b.run }; }
+  /* held touch buttons, merged into Player 1 exactly like keys */
+  var touchKeys = { l: false, r: false, u: false, d: false, run: false };
+
   function p1Input() {
     var k = {
       l: !!keys.ArrowLeft, r: !!keys.ArrowRight,
       u: !!keys.ArrowUp || !!keys.KeyX, d: !!keys.ArrowDown, run: !!keys.KeyZ
     };
-    return merge(k, padInput());
+    return merge(merge(k, padInput()), touchKeys);
   }
   function p2Input() {
     return {
@@ -77,7 +100,7 @@
       u: !!keys.KeyW || !!keys.KeyG, d: !!keys.KeyS, run: !!keys.KeyF
     };
   }
-  function myLocalInput() { return role === 'local' ? p1Input() : p1Input(); }
+  function myLocalInput() { return p1Input(); }
 
   /* inputs array indexed by SLOT */
   function buildInputs() {
@@ -95,12 +118,38 @@
     return inputs;
   }
 
+  /* ---------------- touch devices ---------------- */
+  /* Touch pad only for touch-first devices: a Windows laptop with a touch
+   * screen also has a keyboard and a mouse, and would not want it.
+   * ?touch=1 / ?touch=0 overrides the guess. */
+  var isTouch = false;
+  try {
+    var mm = window.matchMedia;
+    if (mm) {
+      isTouch = mm('(pointer: coarse)').matches || mm('(hover: none)').matches;
+    } else {
+      isTouch = ('ontouchstart' in window) && window.innerWidth < 900;
+    }
+    var tq = new URLSearchParams(location.search).get('touch');
+    if (tq === '1') isTouch = true;
+    if (tq === '0') isTouch = false;
+  } catch (e) { isTouch = false; }
+
+  function paintTouch() {
+    var pad = $('touch-pad');
+    if (!pad) return;
+    pad.classList.toggle('hidden', !(isTouch && view === 'game'));
+  }
+
   /* ---------------- view switching ---------------- */
   function show(v) {
     view = v;
     $('view-menu').classList.toggle('hidden', v !== 'menu');
     $('view-lobby').classList.toggle('hidden', v !== 'lobby');
     $('view-game').classList.toggle('hidden', v !== 'game');
+    last = 0;
+    if (v === 'game' && renderer) renderer.resize();
+    paintTouch();
   }
   function setStatus(id, msg, isErr) {
     var el = $(id); if (!el) return;
@@ -111,10 +160,25 @@
   /* ---------------- pick buttons ---------------- */
   function paintPicks() {
     ['red', 'green'].forEach(function (c) {
-      $('pick-' + c).classList.toggle('selected', myPick === c);
-      var lb = $('lobby-pick-' + c);
-      if (lb) lb.classList.toggle('selected', myPick === c);
+      var a = $('pick-' + c), b = $('lobby-pick-' + c);
+      if (a) { a.classList.toggle('selected', myPick === c); a.setAttribute('aria-pressed', myPick === c ? 'true' : 'false'); }
+      if (b) b.classList.toggle('selected', myPick === c);
     });
+  }
+  function paintStage() {
+    var btns = document.querySelectorAll('.stage-btn[data-stage]');
+    for (var i = 0; i < btns.length; i++) {
+      var id = btns[i].getAttribute('data-stage');
+      btns[i].classList.toggle('selected', id === myStage);
+      btns[i].disabled = role === 'guest';
+    }
+    $('hud-stage').textContent = stageName(myStage);
+    var note = $('stage-note');
+    if (note) {
+      if (role === 'guest') note.textContent = T('lobby.stageGuest', { stage: stageName(myStage) });
+      else if (role === 'host') note.textContent = T('lobby.stageHost');
+      else note.textContent = '';
+    }
   }
   function setPick(c, fromNet) {
     myPick = c;
@@ -124,8 +188,23 @@
     else if (role === 'guest') refreshLobby();
   }
   ['pick-red', 'pick-green', 'lobby-pick-red', 'lobby-pick-green'].forEach(function (id) {
-    $(id).addEventListener('click', function () { setPick(this.getAttribute('data-pick')); });
+    var el = $(id);
+    if (el) el.addEventListener('click', function () { setPick(this.getAttribute('data-pick')); });
   });
+
+  /* stage buttons (menu + lobby) */
+  (function () {
+    var btns = document.querySelectorAll('.stage-btn[data-stage]');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].addEventListener('click', function () {
+        if (role === 'guest') return;
+        myStage = this.getAttribute('data-stage');
+        paintStage();
+        if (role === 'host' && net) broadcastLobby();
+        updateHudStage();
+      });
+    }
+  })();
 
   /* ---------------- lobby (host) ---------------- */
   function recomputeAssignments() {
@@ -137,10 +216,9 @@
     if (!net) return;
     net.send({
       t: 'lobby', hostPick: myPick, guestAssigned: hostLobby.guestAssigned,
-      hostReady: hostLobby.myReady, guestReady: hostLobby.guestReady
+      hostReady: hostLobby.myReady, guestReady: hostLobby.guestReady, stage: myStage
     });
   }
-  function lobbyDataForGuest() { /* guest uses guestLobby */ }
 
   function refreshLobby() {
     $('lobby-code').textContent = roomCode || '-----';
@@ -151,63 +229,85 @@
     function row(name, color, connText, connOk, ready, readyText) {
       var li = document.createElement('li');
       var left = document.createElement('span');
-      left.innerHTML = '<span class="dot dot-' + color + '"></span> ' + name;
-      left.style.display = 'inline-flex'; left.style.gap = '8px'; left.style.alignItems = 'center';
+      left.className = 'who';
+      var cube = document.createElement('span');
+      cube.className = 'mini-cube' + (color === 'green' ? ' green' : '');
+      left.appendChild(cube);
+      left.appendChild(document.createTextNode(name + ' · ' + colorName(color)));
       var right = document.createElement('span');
-      var b1 = document.createElement('span'); b1.className = 'badge ' + (connOk ? 'ok' : 'wait'); b1.textContent = connText;
-      var b2 = document.createElement('span'); b2.className = 'badge ' + (ready ? 'ok' : 'wait'); b2.textContent = readyText;
+      var b1 = document.createElement('span');
+      b1.className = 'badge ' + (connOk ? 'ok' : 'wait');
+      b1.textContent = connText;
+      var b2 = document.createElement('span');
+      b2.className = 'badge ' + (ready ? 'ok' : 'wait');
+      b2.textContent = readyText;
       right.appendChild(b1); right.appendChild(document.createTextNode(' ')); right.appendChild(b2);
       li.appendChild(left); li.appendChild(right);
       ul.appendChild(li);
     }
     if (role === 'host') {
-      row('You (host)', myPick, 'connected', true, hostLobby.myReady, hostLobby.myReady ? 'ready' : 'not ready');
+      row(T('lobby.youHost'), myPick, T('badge.connected'), true,
+          hostLobby.myReady, T(hostLobby.myReady ? 'badge.ready' : 'badge.notReady'));
       if (hostLobby.guestIn) {
-        row('Partner', hostLobby.guestAssigned || 'green', 'connected', true,
-            hostLobby.guestReady, hostLobby.guestReady ? 'ready' : 'not ready');
+        row(T('lobby.partner'), hostLobby.guestAssigned || 'green', T('badge.connected'), true,
+            hostLobby.guestReady, T(hostLobby.guestReady ? 'badge.ready' : 'badge.notReady'));
       } else {
-        row('Partner', 'green', 'waiting to join…', false, false, 'not ready');
+        row(T('lobby.partner'), 'green', T('badge.waiting'), false, false, T('badge.notReady'));
       }
       $('btn-start').disabled = !(hostLobby.guestIn && hostLobby.guestReady);
       $('btn-start').classList.toggle('hidden', false);
-      $('btn-ready').textContent = hostLobby.myReady ? 'Ready ✓' : 'Ready';
+      $('btn-ready').textContent = T(hostLobby.myReady ? 'lobby.readyDone' : 'lobby.ready');
       $('btn-ready').classList.toggle('ready-on', hostLobby.myReady);
       var note = '';
       if (hostLobby.guestIn && hostLobby.guestPick === myPick) {
-        note = 'You both picked ' + myPick + ' — partner will play ' + (hostLobby.guestAssigned || '') + '.';
+        note = T('lobby.pickClashHost', { name: colorName(myPick), other: colorName(hostLobby.guestAssigned) });
       }
       $('pick-note').textContent = note;
       setStatus('lobby-status', hostLobby.guestIn
-        ? (hostLobby.guestReady ? 'Partner is ready — hit Start!' : 'Partner joined. Waiting for them to ready up…')
-        : 'Share the code or invite link with your partner.');
+        ? T(hostLobby.guestReady ? 'lobby.hostReady' : 'lobby.hostWaiting')
+        : T('lobby.hostShare'));
     } else if (role === 'guest') {
-      row('Host', guestLobby.hostPick, 'connected', true, guestLobby.hostReady, guestLobby.hostReady ? 'ready' : 'not ready');
-      row('You', guestLobby.assigned, 'connected', true, guestLobby.myReady, guestLobby.myReady ? 'ready' : 'not ready');
+      row(T('lobby.host'), guestLobby.hostPick, T('badge.connected'), true,
+          guestLobby.hostReady, T(guestLobby.hostReady ? 'badge.ready' : 'badge.notReady'));
+      row(T('lobby.you'), guestLobby.assigned, T('badge.connected'), true,
+          guestLobby.myReady, T(guestLobby.myReady ? 'badge.ready' : 'badge.notReady'));
       $('btn-start').classList.add('hidden');
-      $('btn-ready').textContent = guestLobby.myReady ? 'Ready ✓' : 'Ready';
+      $('btn-ready').textContent = T(guestLobby.myReady ? 'lobby.readyDone' : 'lobby.ready');
       $('btn-ready').classList.toggle('ready-on', guestLobby.myReady);
       var note2 = '';
       if (myPick !== guestLobby.assigned) {
-        note2 = 'Host picked ' + colorName(guestLobby.hostPick) + ' too — you will play ' + colorName(guestLobby.assigned) + '.';
+        note2 = T('lobby.pickClashGuest', { name: colorName(guestLobby.hostPick), other: colorName(guestLobby.assigned) });
       }
       $('pick-note').textContent = note2;
-      setStatus('lobby-status', 'You are in. Pick your character and ready up — the host starts the game.');
+      setStatus('lobby-status', T('lobby.guestIn'));
     }
+    paintStage();
   }
 
   /* ---------------- game lifecycle ---------------- */
   function startGame() {
+    if (!renderer) { setStatus('menu-status', T('menu.3dFail'), true); return; }
+    finishShown = false;
     hideOverlay();
-    if (role === 'solo') state = E.createGame({ mode: 'solo', soloColor: myPick, twoPlayer: false });
-    else state = E.createGame({ mode: role, twoPlayer: true });
+    role = role || 'solo';
+    state = E.createGame({
+      mode: role === 'solo' ? 'solo' : role,
+      soloColor: myPick,
+      twoPlayer: role !== 'solo',
+      stage: myStage
+    });
     running = true;
     show('game');
     paintHudMode();
-    Sfx.startMusic();
+    updateHudStage();
+    paintStage();
+    Sfx.startMusic(myStage);
   }
   function paintHudMode() {
-    var label = { solo: 'SOLO', local: 'LOCAL 2P', host: 'ONLINE — HOST', guest: 'ONLINE — GUEST' }[role] || '';
-    $('hud-mode').textContent = label;
+    $('hud-mode').textContent = role && I18n ? I18n.modeHud(role) : '';
+  }
+  function updateHudStage() {
+    $('hud-stage').textContent = stageName(myStage);
   }
   function stopGameToMenu() {
     running = false;
@@ -220,13 +320,129 @@
     hideOverlay();
     show('menu');
     setStatus('menu-status', '');
+    paintStage();
   }
   function showOverlay(text, showAgain) {
+    $('summary').classList.add('hidden');
+    $('summary-hint').classList.add('hidden');
+    $('overlay-text').classList.remove('hidden');
     $('overlay-text').textContent = text;
     $('btn-again').classList.toggle('hidden', !showAgain);
     $('overlay').classList.remove('hidden');
   }
   function hideOverlay() { $('overlay').classList.add('hidden'); }
+
+  /* ---------------- end-of-run summary ---------------- */
+  function fmtTime(ms) {
+    if (ms == null || !isFinite(ms)) return '—';
+    var total = Math.max(0, Math.round(ms / 1000));
+    var m = Math.floor(total / 60), s = total % 60;
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+  function fmtScore(n) {
+    if (n == null) return '—';
+    try { return Number(n).toLocaleString(I18n && I18n.lang === 'tr' ? 'tr-TR' : 'en-US'); }
+    catch (e) { return String(n); }
+  }
+
+  function addStat(label, value) {
+    var wrap = document.createElement('div'); wrap.className = 'stat';
+    var l = document.createElement('span'); l.textContent = label;
+    var b = document.createElement('b'); b.textContent = value;
+    wrap.appendChild(l); wrap.appendChild(b);
+    $('summary-stats').appendChild(wrap);
+  }
+  function addBestRow(label, value, isNew, known) {
+    var row = document.createElement('div');
+    row.className = 'best-row' + (known ? '' : ' none');
+    var l = document.createElement('span'); l.textContent = label;
+    var right = document.createElement('span');
+    var b = document.createElement('b'); b.textContent = value;
+    right.appendChild(b);
+    if (isNew) {
+      var tag = document.createElement('span'); tag.className = 'new'; tag.textContent = T('summary.new');
+      right.appendChild(tag);
+    }
+    row.appendChild(l); row.appendChild(right);
+    $('summary-best-rows').appendChild(row);
+  }
+
+  function showSummary(cfg) {
+    var cleared = !!cfg.cleared;
+    $('overlay-text').classList.add('hidden');
+    $('overlay-text').textContent = '';
+    $('summary').classList.remove('hidden');
+
+    var kick = $('summary-kicker');
+    kick.textContent = T(cleared ? 'summary.clear' : 'summary.over');
+    kick.classList.toggle('over', !cleared);
+    $('summary-title').textContent = cfg.stageName;
+    $('summary-sub').textContent = cfg.modeName + ' · ' + T(cleared ? 'summary.reachedFlag' : 'summary.outOfLives');
+    $('summary-mode').textContent = '· ' + cfg.modeName;
+
+    $('summary-stats').innerHTML = '';
+    addStat(T('summary.score'), fmtScore(cfg.st.score));
+    addStat(T('summary.bananas'), String(cfg.st.coinCount));
+    addStat(T(cleared ? 'summary.time' : 'summary.survived'), fmtTime(cfg.elapsedMs));
+    addStat(T('summary.lives'), String(cfg.st.lives));
+
+    $('summary-best-rows').innerHTML = '';
+    addBestRow(T('summary.bestScore'), fmtScore(cfg.best.bestScore), cfg.best.newScore, cfg.best.bestScore != null);
+    addBestRow(T('summary.bestTime'), fmtTime(cfg.best.bestTimeMs), cfg.best.newTime, cfg.best.bestTimeMs != null);
+
+    var hint = $('summary-hint');
+    hint.classList.remove('hidden');
+    if (cfg.best.bestScore == null) hint.textContent = T('summary.noStorage');
+    else if (!cfg.showAgain) hint.textContent = T('summary.waitingHost');
+    else if (cfg.best.newTime) hint.textContent = T('summary.newTime');
+    else if (cfg.best.newScore && cleared) hint.textContent = T('summary.newScoreClear');
+    else if (cfg.best.newScore) hint.textContent = T('summary.newScore');
+    else if (cleared) hint.textContent = T('summary.playToBeat');
+    else hint.textContent = T('summary.target', { n: fmtScore(cfg.best.bestScore + 1) });
+
+    $('btn-again').classList.toggle('hidden', !cfg.showAgain);
+    $('overlay').classList.remove('hidden');
+  }
+
+  function submitRun(st, cleared) {
+    var elapsedMs = Math.round((st.runTicks || 0) * 1000 / 60);
+    /* progress.js may be missing (blocked script); the summary still shows
+     * the run itself, just without records */
+    if (!Best) {
+      return {
+        bestScore: null, bestTimeMs: null, newScore: false, newTime: false,
+        modeName: role === 'solo' ? 'Solo' : role === 'local' ? 'Local 2P' : 'Online co-op',
+        elapsedMs: elapsedMs
+      };
+    }
+    var best = Best.submit(st.stage || myStage, role, { score: st.score, cleared: cleared, timeMs: elapsedMs });
+    best.elapsedMs = elapsedMs;
+    best.modeName = I18n ? I18n.modeName(role) : best.modeName;
+    return best;
+  }
+
+  /* ---------------- language switch ---------------- */
+  function repaintText() {
+    setStatus('menu-status', '');
+    setStatus('lobby-status', '');
+    setStatus('game-status', '');
+    paintPicks();
+    paintStage();
+    paintHudMode();
+    updateHudStage();
+    paintSound();
+    if (role && view === 'lobby') refreshLobby();
+  }
+  (function () {
+    var btns = document.querySelectorAll('.lang-switch [data-lang]');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].addEventListener('click', function () {
+        if (!I18n) return;
+        I18n.setLang(this.getAttribute('data-lang'));
+        repaintText();
+      });
+    }
+  })();
 
   /* menu buttons */
   $('btn-solo').addEventListener('click', function () { role = 'solo'; startGame(); });
@@ -235,30 +451,93 @@
   $('btn-overlay-leave').addEventListener('click', stopGameToMenu);
   $('btn-leave-lobby').addEventListener('click', stopGameToMenu);
   $('btn-again').addEventListener('click', function () {
-    if (role === 'guest') return; // host drives restarts
+    if (role === 'guest') return;                 // host drives restarts
     startGame();
-    if (role === 'host' && net) net.send({ t: 'start', hostPick: myPick, guestAssigned: hostLobby.guestAssigned });
+    if (role === 'host' && net) net.send({ t: 'start', hostPick: myPick, guestAssigned: hostLobby.guestAssigned, stage: myStage });
   });
   $('btn-copy').addEventListener('click', function () {
-    var inp = $('invite-link'); inp.select();
-    var done = function () { setStatus('lobby-status', 'Invite link copied — send it to your partner.'); };
+    var inp = $('invite-link');
+    inp.select();
+    var done = function () { setStatus('lobby-status', T('lobby.copied')); };
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(inp.value).then(done, function () { document.execCommand('copy'); done(); });
     } else { document.execCommand('copy'); done(); }
   });
+  /* ---------------- sound: mute + volume, remembered locally ---------------- */
+  var VOL_KEY = 'leapbuddies.volume.v1', MUTE_KEY = 'leapbuddies.muted.v1';
+  function savePref(k, v) { try { localStorage.setItem(k, String(v)); } catch (e) { /* blocked */ } }
+  function loadAudioPrefs() {
+    try {
+      var v = parseFloat(localStorage.getItem(VOL_KEY));
+      if (isFinite(v)) Sfx.setVolume(v);
+      if (localStorage.getItem(MUTE_KEY) === '1') Sfx.setMuted(true);
+    } catch (e) { /* blocked */ }
+  }
+  function isSilent() { return Sfx.isMuted() || Sfx.getVolume() <= 0; }
+  function paintSound() {
+    var silent = isSilent();
+    $('btn-mute').textContent = T(silent ? 'hud.soundOff' : 'hud.soundOn');
+    $('btn-mute').setAttribute('aria-pressed', silent ? 'true' : 'false');
+    var vol = $('vol');
+    if (vol && document.activeElement !== vol) vol.value = Math.round(Sfx.getVolume() * 100);
+  }
+  /* one button for the whole sound state: from silence it restores a level,
+   * from sound it mutes. A slider at 0 counts as silence, not "on". */
   function toggleMute() {
-    var m = !Sfx.isMuted();
-    Sfx.setMuted(m);
-    $('btn-mute').textContent = m ? 'Sound: off' : 'Sound: on';
+    if (isSilent()) {
+      if (Sfx.getVolume() <= 0) { Sfx.setVolume(0.8); savePref(VOL_KEY, 0.8); }
+      Sfx.setMuted(false);
+    } else {
+      Sfx.setMuted(true);
+    }
+    savePref(MUTE_KEY, Sfx.isMuted() ? 1 : 0);
+    paintSound();
   }
   $('btn-mute').addEventListener('click', toggleMute);
 
+  /* ---------------- touch pad ---------------- */
+  (function () {
+    var btns = document.querySelectorAll('.tbtn[data-touch]');
+    function release(btn, act, e) {
+      if (e && e.cancelable) e.preventDefault();
+      touchKeys[act] = false;
+      btn.classList.remove('held');
+    }
+    for (var i = 0; i < btns.length; i++) {
+      (function (btn) {
+        var act = btn.getAttribute('data-touch');
+        btn.addEventListener('pointerdown', function (e) {
+          if (e.cancelable) e.preventDefault();
+          touchKeys[act] = true;
+          btn.classList.add('held');
+          if (btn.setPointerCapture && e.pointerId != null) {
+            try { btn.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+          }
+          Sfx.unlock();
+        });
+        ['pointerup', 'pointercancel', 'pointerleave', 'lostpointercapture'].forEach(function (t) {
+          btn.addEventListener(t, function (e) { release(btn, act, e); });
+        });
+        btn.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+      })(btns[i]);
+    }
+  })();
+  $('vol').addEventListener('input', function () {
+    var v = Number(this.value) / 100;
+    Sfx.setVolume(v);
+    savePref(VOL_KEY, v);
+    if (v > 0 && Sfx.isMuted()) { Sfx.setMuted(false); savePref(MUTE_KEY, 0); }
+    Sfx.unlock();
+    paintSound();
+  });
+  $('vol').addEventListener('change', function () { savePref(VOL_KEY, Sfx.getVolume()); });
+
   /* ---------------- online: host ---------------- */
   $('btn-create').addEventListener('click', function () {
-    if (!Net.libReady()) { setStatus('menu-status', 'Netplay library failed to load — check your connection and refresh. Solo and Local 2P still work.', true); return; }
+    if (!Net.libReady()) { setStatus('menu-status', T('menu.netFail'), true); return; }
     role = 'host';
     roomCode = Net.makeCode();
-    setStatus('menu-status', 'Creating room…');
+    setStatus('menu-status', T('menu.creating'));
     net = Net.host(roomCode, {
       onOpen: function () { show('lobby'); refreshLobby(); },
       onGuest: function () {
@@ -272,17 +551,17 @@
         if (view !== 'game') { role = null; net = null; }
       }
     });
-    if (!net) { role = null; setStatus('menu-status', 'Could not create a room.', true); }
+    if (!net) { role = null; setStatus('menu-status', T('menu.createFail'), true); }
   });
   function hostGuestGone() {
     if (role !== 'host') return;
     if (view === 'game' && running) {
       running = false;
-      showOverlay('Your partner disconnected.\nThe session has ended.', false);
+      showOverlay(T('game.partnerDisconnected'), false);
     } else if (view === 'lobby') {
       hostLobby.guestIn = false; hostLobby.guestReady = false;
       recomputeAssignments(); refreshLobby();
-      setStatus('lobby-status', 'Partner left the room.', true);
+      setStatus('lobby-status', T('game.partnerLeft'), true);
     }
   }
   function hostOnData(d) {
@@ -302,22 +581,22 @@
   $('btn-start').addEventListener('click', function () {
     if (role !== 'host') return;
     startGame();
-    net.send({ t: 'start', hostPick: myPick, guestAssigned: hostLobby.guestAssigned });
+    net.send({ t: 'start', hostPick: myPick, guestAssigned: hostLobby.guestAssigned, stage: myStage });
   });
 
   /* ---------------- online: guest ---------------- */
   function joinRoom(code) {
     code = (code || '').toUpperCase().trim();
-    if (!/^[A-Z0-9]{5}$/.test(code)) { setStatus('menu-status', 'Enter the 5-character room code.', true); return; }
-    if (!Net.libReady()) { setStatus('menu-status', 'Netplay library failed to load — check your connection and refresh.', true); return; }
+    if (!/^[A-Z0-9]{5}$/.test(code)) { setStatus('menu-status', T('menu.needCode'), true); return; }
+    if (!Net.libReady()) { setStatus('menu-status', T('menu.joinNoLib'), true); return; }
     role = 'guest';
     roomCode = code;
     guestLobby.assigned = otherColor(myPick); // provisional until host assigns
-    setStatus('menu-status', 'Joining room ' + code + '…');
+    setStatus('menu-status', T('menu.joining', { code: code }));
     var opened = false;
     var joinTimer = setTimeout(function () {
       if (!opened && role === 'guest') {
-        setStatus('menu-status', 'Still trying to reach the host… If this stays stuck, the connection is being blocked — try reloading both tabs, or a different browser/network.', true);
+        setStatus('menu-status', T('menu.joinStuck'), true);
       }
     }, 15000);
     net = Net.join(code, {
@@ -332,9 +611,9 @@
         if (role !== 'guest') return;
         if (view === 'game' && (running || guestLobby.started)) {
           running = false;
-          showOverlay('Connection to the host was lost.\nThe session has ended.', false);
+          showOverlay(T('game.connectionLost'), false);
         } else if (view === 'lobby') {
-          setStatus('menu-status', 'The host left the room.', true);
+          setStatus('menu-status', T('lobby.hostLeft'), true);
           stopGameToMenu();
         }
       },
@@ -343,26 +622,31 @@
         else setStatus('game-status', msg, true);
       }
     });
-    if (!net) { role = null; }
+    if (!net) role = null;
   }
   $('btn-join').addEventListener('click', function () { joinRoom($('join-code').value); });
+  $('join-code').addEventListener('keydown', function (e) {
+    if (e.code === 'Enter') joinRoom(this.value);
+  });
   function guestOnData(d) {
     if (!d || !d.t) return;
     if (d.t === 'lobby') {
       guestLobby.hostPick = d.hostPick;
       if (d.guestAssigned) guestLobby.assigned = d.guestAssigned;
       guestLobby.hostReady = !!d.hostReady;
+      if (d.stage) { myStage = d.stage; updateHudStage(); }
       if (view === 'lobby') refreshLobby();
     } else if (d.t === 'start') {
       guestLobby.started = true;
       finishShown = false;
       if (d.guestAssigned) { guestLobby.assigned = d.guestAssigned; myPick = d.guestAssigned; paintPicks(); }
-      mirror = E.createGame({ mode: 'guest', twoPlayer: true });
+      if (d.stage) { myStage = d.stage; }
+      mirror = E.createGame({ mode: 'guest', twoPlayer: true, stage: myStage });
       prevSnap = curSnap = null; snapCount = 0;
       running = true;
       hideOverlay();
-      show('game'); paintHudMode();
-      Sfx.startMusic();
+      show('game'); paintHudMode(); updateHudStage(); paintStage();
+      Sfx.startMusic(myStage);
     } else if (d.t === 'snap') {
       lastSnapAt = Date.now();
       prevSnap = curSnap; prevSnapAt = curSnapAt;
@@ -389,43 +673,44 @@
     if (room) {
       $('join-code').value = room.toUpperCase();
       if (q.get('autojoin') === '1') {
-        setStatus('menu-status', 'Joining room ' + room.toUpperCase() + '…');
+        setStatus('menu-status', T('menu.joining', { code: room.toUpperCase() }));
         joinRoom(room);
       } else {
-        setStatus('menu-status', 'You were invited to room ' + room.toUpperCase() + ' — pick your character, then Join Room.');
+        setStatus('menu-status', T('menu.invited', { code: room.toUpperCase() }));
       }
     }
   })();
 
   /* ---------------- fixed-timestep loop ---------------- */
-  var last = 0, acc = 0, STEP = 1000 / 60;
+  var last = 0, acc = 0;
+  var fpsFrames = 0, fpsTime = 0, fps = 0, costMs = 0;
+
   function frame(ts) {
     requestAnimationFrame(frame);
-    if (!last) last = ts;
-    var dt = ts - last; last = ts;
-    if (dt > 250) dt = 250;
-    if (view !== 'game') return;
+    var t0 = performance.now();
+    tick(ts);
+    costMs += (performance.now() - t0 - costMs) * 0.08;   // rolling JS cost/frame
+  }
 
-    if (role === 'guest') {
-      // send my inputs at ~30Hz or on change
-      var inp = myLocalInput();
-      var key = [inp.l, inp.r, inp.u, inp.d, inp.run].map(Number).join('');
-      if (net && (key !== lastSentInput || ts - lastInputSentAt > 120)) {
-        net.send({ t: 'input', i: inp });
-        lastSentInput = key; lastInputSentAt = ts;
-      }
-      if (running && mirror && curSnap) {
-        renderGuest(ts);
-        updateHud(mirror);
-        if (mirror.finished) onFinished(mirror);
-        if (Date.now() - lastSnapAt > 4000 && running) {
-          running = false;
-          showOverlay('Connection to the host was lost.\nThe session has ended.', false);
-        }
-      }
+  function tick(ts) {
+    if (document.hidden) { last = 0; return; }      // paused while hidden
+    if (!last) { last = ts; if (view === 'game' && renderer) renderer.resize(); }
+    var dt = Math.min(0.2, (ts - last) / 1000);
+    last = ts;
+    if (dt > 0) {
+      fpsFrames++; fpsTime += dt;
+      if (fpsTime >= 0.5) { fps = Math.round(fpsFrames / fpsTime); fpsFrames = 0; fpsTime = 0; }
+    }
+
+    if (view !== 'game') {                           // menus: animate the 3D cards only
+      if (R && R.previewTick) R.previewTick(ts);
       return;
     }
+    if (!renderer) return;
+
+    if (role === 'guest') { guestFrame(ts, dt); return; }
     if (!running || !state) return;
+
     acc += dt;
     var steps = 0;
     while (acc >= STEP && steps < 5) {
@@ -436,24 +721,62 @@
         net.send({ t: 'snap', s: E.makeSnapshot(state) });
       }
       if (state.finished) { onFinished(state); break; }
+      if (state.gameOver) { onGameOver(state); break; }
     }
-    render(state);
+    renderer.draw(state, { dt: dt, mine: mySlot() });
     updateHud(state);
+  }
+
+  function guestFrame(ts, dt) {
+    // send my inputs at ~30Hz or on change
+    var inp = myLocalInput();
+    var key = [inp.l, inp.r, inp.u, inp.d, inp.run].map(Number).join('');
+    if (net && (key !== lastSentInput || ts - lastInputSentAt > 120)) {
+      net.send({ t: 'input', i: inp });
+      lastSentInput = key; lastInputSentAt = ts;
+    }
+    if (!running || !mirror || !curSnap) return;
+
+    // render one snapshot behind, interpolating up to the newest one
+    var alpha = 1;
+    if (prevSnap && curSnap && curSnapAt > prevSnapAt) {
+      alpha = (ts - prevSnapAt) / Math.max(1, curSnapAt - prevSnapAt);
+      alpha = Math.max(0, Math.min(1.08, alpha));
+    }
+    renderer.draw(mirror, { dt: dt, alpha: alpha, prev: prevSnap, mine: mySlot() });
+    updateHud(mirror);
+    if (mirror.gameOver) onGameOver(mirror);
+    else if (mirror.finished) onFinished(mirror);
+    if (Date.now() - lastSnapAt > 4000 && running) {
+      running = false;
+      showOverlay(T('game.connectionLost'), false);
+    }
   }
   requestAnimationFrame(frame);
 
-  var finishShown = false;
+  function onGameOver(st) {
+    if (finishShown) return;
+    finishShown = true;
+    Sfx.play('gameover');
+    var best = submitRun(st, false);
+    showSummary({
+      cleared: false, stageName: stageName(st.stage || myStage), modeName: best.modeName,
+      st: st, elapsedMs: best.elapsedMs, best: best, showAgain: role !== 'guest'
+    });
+    if (role === 'guest') setStatus('game-status', T('game.outOfLives'));
+  }
+
   function onFinished(st) {
     if (finishShown) return;
     finishShown = true;
     Sfx.play('goal');
-    var mins = Math.max(0, Math.ceil(st.timeLeft / 60));
-    showOverlay('LEVEL CLEAR!\nBananas: ' + st.coinCount + '   Score: ' + st.score + '\nTime left: ' + mins + 's', role !== 'guest');
-    if (role === 'guest') setStatus('game-status', 'Waiting for the host to restart or end the session.');
+    var best = submitRun(st, true);
+    showSummary({
+      cleared: true, stageName: stageName(st.stage || myStage), modeName: best.modeName,
+      st: st, elapsedMs: best.elapsedMs, best: best, showAgain: role !== 'guest'
+    });
+    if (role === 'guest') setStatus('game-status', T('game.waitingRestart'));
   }
-  // reset the flag whenever a new game starts
-  var _startGame = startGame;
-  startGame = function () { finishShown = false; _startGame(); };
 
   function drainEvents(st) {
     for (var i = 0; i < st.events.length; i++) {
@@ -465,118 +788,32 @@
     st.events.length = 0;
   }
 
+  function paintHearts(el, p) {
+    if (!el) return;
+    if (!p || p.absent) { el.hidden = true; return; }
+    el.hidden = false;
+    var hearts = p.big ? 2 : 1;
+    el.querySelector('.hearts').textContent = hearts >= 2 ? '\u2665\u2665' : '\u2665\u2661';
+    el.classList.toggle('powered', hearts >= 2);
+  }
+
   function updateHud(st) {
     $('hud-coins').textContent = st.coinCount;
     $('hud-score').textContent = st.score;
     $('hud-time').textContent = Math.max(0, Math.ceil(st.timeLeft / 60));
-  }
-
-  /* ---------------- rendering ---------------- */
-  function render(st) { drawWorld(st, null); }
-
-  function renderGuest(ts) {
-    // interpolate player/enemy positions between the last two snapshots
-    var alpha = 1;
-    if (prevSnap && curSnap && curSnapAt > prevSnapAt) {
-      alpha = Math.min(1, (ts - curSnapAt) / Math.max(1, curSnapAt - prevSnapAt) + 0.5);
+    var red = null, green = null;
+    for (var i = 0; i < st.players.length; i++) {
+      var p = st.players[i];
+      if (p.color === 'red') red = p;
+      else if (p.color === 'green') green = p;
     }
-    drawWorld(mirror, { prev: prevSnap, alpha: alpha });
+    paintHearts($('hud-hearts-red'), red);
+    paintHearts($('hud-hearts-green'), green);
+    $('hud-lives').textContent = st.lives;
+    $('hud-lives-chip').classList.toggle('low', st.lives <= 1);
   }
 
-  function lerpPos(snapArr, i, cur) {
-    if (!snapArr || !snapArr[i]) return cur;
-    return snapArr[i];
-  }
-
-  function drawWorld(st, interp) {
-    var camX = Math.round(st.camX);
-    S.drawBackground(ctx, camX, VIEW_W, VIEW_H);
-    ctx.save();
-    ctx.translate(-camX, 0);
-
-    // midpoint + goal poles (behind tiles)
-    drawFlag(st.midpointTx * TILE + 6, 15 * TILE, st.midReached, '#39d353');
-    drawFlag(st.goalTx * TILE + 6, st.goalTopTy * TILE, st.finished, '#f7c948');
-
-    // tiles in view
-    var tx0 = Math.max(0, Math.floor(camX / TILE) - 1);
-    var tx1 = Math.min(st.levelW - 1, tx0 + VIEW_W / TILE + 2);
-    for (var ty = 0; ty < st.levelH; ty++) {
-      for (var tx = tx0; tx <= tx1; tx++) {
-        var v = st.tiles[ty * st.levelW + tx];
-        if (v !== E.T.EMPTY) S.drawTile(ctx, v, tx * TILE, ty * TILE, st.tick, st.gateOpen);
-      }
-    }
-    // switches
-    st.switches.forEach(function (sw) {
-      var x = sw.tx * TILE, y = sw.ty * TILE;
-      ctx.fillStyle = '#444c5c'; ctx.fillRect(x + 1, y + 12, 14, 4);
-      ctx.fillStyle = sw.pressed ? '#39d353' : '#e23b2e';
-      ctx.fillRect(x + 2, y + (sw.pressed ? 11 : 9), 12, 3);
-    });
-    // platforms
-    st.platforms.forEach(function (pl) {
-      ctx.fillStyle = '#6e4520'; ctx.fillRect(pl.x, pl.y, pl.w, pl.h);
-      ctx.fillStyle = '#a5713a'; ctx.fillRect(pl.x, pl.y, pl.w, 3);
-      ctx.fillStyle = '#ffd94a';
-      ctx.fillRect(pl.x + 3, pl.y + 3, 3, 3); ctx.fillRect(pl.x + pl.w - 6, pl.y + 3, 3, 3);
-    });
-    // bananas (collectibles)
-    st.coinsArr.forEach(function (c, i) {
-      if (c.taken) return;
-      var bob = Math.sin(st.tick * 0.1 + i) * 1.2;
-      S.drawBanana(ctx, c.x, c.y + bob);
-    });
-    // Nutella jars (power-up: extra hit / restore)
-    st.berries.forEach(function (b) {
-      S.drawJar(ctx, b.x, b.y + 2);
-    });
-    // enemies
-    st.enemies.forEach(function (e, i) {
-      if (e.dead) return;
-      var pos = interpPos(interp, 'enemies', i, e);
-      var copy = Object.create(e); copy.x = pos[0]; copy.y = pos[1];
-      S.drawEnemy(ctx, copy);
-    });
-    // players
-    st.players.forEach(function (p, i) {
-      if (p.absent) return;
-      var pos = interpPos(interp, 'players', i, p);
-      var copy = Object.create(p); copy.x = pos[0]; copy.y = pos[1];
-      S.drawPlayer(ctx, copy, st.tick);
-      // "you" marker over my own character in online/local-primary
-      var mine = (role === 'solo' && p.slot === mySlot()) ||
-                 (role === 'local' && p.slot === mySlot()) ||
-                 (role === 'host' && p.slot === mySlot()) ||
-                 (role === 'guest' && p.color === guestLobby.assigned);
-      if (mine && p.state === 'play') {
-        var mx = pos[0] + p.w / 2, my = pos[1] - 8 + Math.sin(st.tick * 0.15) * 1.5;
-        ctx.fillStyle = '#ffd94a';
-        ctx.beginPath(); ctx.moveTo(mx - 4, my - 5); ctx.lineTo(mx + 4, my - 5); ctx.lineTo(mx, my); ctx.closePath(); ctx.fill();
-      }
-    });
-    ctx.restore();
-  }
-
-  function interpPos(interp, kind, i, cur) {
-    if (!interp || !interp.prev) return [cur.x, cur.y];
-    var prevArr = interp.prev[kind];
-    if (!prevArr || !prevArr[i]) return [cur.x, cur.y];
-    var a = interp.alpha;
-    return [
-      prevArr[i][0] + (cur.x - prevArr[i][0]) * a,
-      prevArr[i][1] + (cur.y - prevArr[i][1]) * a
-    ];
-  }
-
-  function drawFlag(x, baseY, active, color) {
-    ctx.fillStyle = '#d8dde6'; ctx.fillRect(x, baseY - 80, 3, 80);
-    ctx.fillStyle = '#ffd94a'; ctx.beginPath(); ctx.arc(x + 1.5, baseY - 82, 3, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = active ? color : '#8b93a1';
-    ctx.beginPath();
-    ctx.moveTo(x + 3, baseY - 78); ctx.lineTo(x + 19, baseY - 71); ctx.lineTo(x + 3, baseY - 64);
-    ctx.closePath(); ctx.fill();
-  }
+  window.addEventListener('resize', function () { if (view === 'game' && renderer) renderer.resize(); });
 
   /* ---------------- test hooks (used by automated checks) ---------------- */
   window.__game = {
@@ -587,8 +824,12 @@
     get roomCode() { return roomCode; },
     get snapCount() { return snapCount; },
     get errors() { return errors; },
+    get fps() { return fps; },
+    get cost() { return Math.round(costMs * 100) / 100; },
+    get stage() { return myStage; },
     get lobby() { return role === 'host' ? hostLobby : guestLobby; },
     setPick: setPick,
+    setStage: function (id) { myStage = id; paintStage(); if (role === 'host') broadcastLobby(); },
     startSolo: function () { role = 'solo'; startGame(); },
     startLocal: function () { role = 'local'; startGame(); },
     createRoom: function () { $('btn-create').click(); },
@@ -599,6 +840,16 @@
       var t = down ? 'keydown' : 'keyup';
       window.dispatchEvent(new KeyboardEvent(t, { code: code }));
     },
+    stats: function () { return renderer ? renderer.stats() : null; },
+    dbg: function () { return renderer ? renderer._dbg : null; },
+    /* draw one frame with a chosen delta; used by automated checks when the
+     * browser throttles requestAnimationFrame (hidden or occluded tab) */
+    drawFrame: function (dt) {
+      var st = role === 'guest' ? mirror : state;
+      if (renderer && st) renderer.draw(st, { dt: dt == null ? 1 / 60 : dt, mine: mySlot() });
+    },
+    /* run one full loop tick with a chosen timestamp (same path as rAF) */
+    tickWith: function (ts) { tick(ts); },
     guestState: function () {
       if (!mirror) return null;
       return {
@@ -615,16 +866,21 @@
     }
   };
 
-  // character-select previews: draw the actual sprites on the pick buttons
-  document.querySelectorAll('.char-preview').forEach(function (cv) {
-    var img = S.preview(cv.getAttribute('data-color'));
-    if (!img) return;
-    var g = cv.getContext('2d');
-    g.imageSmoothingEnabled = false;
-    g.clearRect(0, 0, cv.width, cv.height);
-    g.drawImage(img, 0, 0, cv.width, cv.height);
-  });
+  if (!renderer) {
+    setStatus('menu-status', T('menu.3dFail'), true);
+  }
 
+  /* language first so every later repaint uses the chosen one */
+  if (I18n) I18n.apply();
+  loadAudioPrefs();
+  paintSound();
+  document.documentElement.classList.toggle('touch', !!isTouch);
   show('menu');
   paintPicks();
+  paintStage();
+  /* browsers only allow audio after a gesture */
+  window.addEventListener('pointerdown', function once() {
+    Sfx.unlock();
+    window.removeEventListener('pointerdown', once);
+  }, { once: true });
 })();

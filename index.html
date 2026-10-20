@@ -2,68 +2,201 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Interactive Experience</title>
-<meta name="description" content="A lightweight browser-based interactive application with real-time session connectivity.">
-<link rel="stylesheet" href="style.css?v=7">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Leap Buddies — a two-player co-op voxel platformer</title>
+<meta name="description" content="Leap Buddies is a free two-player co-op platform game that runs in the browser: pick a stage, share a room code, and play together in a hand-built 3D voxel world.">
+<meta name="application-name" content="Leap Buddies">
+<meta property="og:title" content="Leap Buddies">
+<meta property="og:description" content="A two-player co-op voxel platform adventure, playable in the browser with a room code.">
+<meta name="theme-color" content="#1b1430">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231b1430'/%3E%3Crect x='7' y='6' width='10' height='10' rx='2' fill='%23ffb84d'/%3E%3Crect x='18' y='11' width='7' height='7' rx='2' fill='%2346d6c6'/%3E%3Crect x='10' y='17' width='12' height='12' rx='2' fill='%23ff7a59'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css?v=32">
 </head>
 <body>
 <main id="app">
-  <h1 class="logo">LEAP&nbsp;BUDDIES</h1>
-  <p class="tagline">a two-player co-op platform adventure — right in your browser</p>
+  <header class="masthead">
+    <div class="logo-cubes" aria-hidden="true">
+      <span class="cube c1"></span><span class="cube c2"></span><span class="cube c3"></span>
+    </div>
+    <h1 class="logo">LEAP&nbsp;BUDDIES</h1>
+    <p class="tagline" data-i18n="tagline">a two-player co-op platform adventure — right in your browser</p>
+  </header>
 
   <!-- ============ MENU ============ -->
   <section id="view-menu" class="panel">
-    <div class="pick-row" role="group" aria-label="Your character">
-      <span class="pick-label">You play as:</span>
-      <button id="pick-red" class="pick-btn char-btn selected" data-pick="red" type="button">
-        <canvas class="char-preview" data-color="red" width="42" height="60"></canvas> S.C.
-      </button>
-      <button id="pick-green" class="pick-btn char-btn" data-pick="green" type="button">
-        <canvas class="char-preview" data-color="green" width="42" height="60"></canvas> B.T.
-      </button>
+    <div class="menu-top">
+      <div class="lang-switch" role="group" data-i18n-aria="lang.label" aria-label="Language">
+        <button type="button" data-lang="en">English</button>
+        <button type="button" data-lang="tr">Türkçe</button>
+      </div>
+    </div>
+
+    <div class="pick-row" role="group" data-i18n-aria="menu.youPlay" aria-label="Your character">
+      <div class="pick-label" data-i18n="menu.youPlay">You play as</div>
+      <div class="pick-cards">
+        <button id="pick-red" class="pick-btn char-btn selected" data-pick="red" type="button" aria-pressed="true">
+          <span class="card-shine" aria-hidden="true"></span>
+          <canvas class="char-preview" data-color="red" width="150" height="190" aria-hidden="true"></canvas>
+          <span class="char-name">S.C.</span>
+          <span class="char-tag" data-i18n="char.redTag">curly hair · chain</span>
+        </button>
+        <button id="pick-green" class="pick-btn char-btn" data-pick="green" type="button" aria-pressed="false">
+          <span class="card-shine" aria-hidden="true"></span>
+          <canvas class="char-preview" data-color="green" width="150" height="190" aria-hidden="true"></canvas>
+          <span class="char-name">B.T.</span>
+          <span class="char-tag" data-i18n="char.greenTag">long hair · blouse</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="stage-pick">
+      <div class="pick-label" data-i18n="stage.label">Stage</div>
+      <div class="stage-row" id="stage-row" role="group" data-i18n-aria="stage.label" aria-label="Stage">
+        <button class="stage-btn selected" data-stage="izmir" type="button"><b data-i18n="stage.izmir">İzmir</b><i data-i18n="stage.izmir.tag">sunset coast</i></button>
+        <button class="stage-btn" data-stage="nyc" type="button"><b data-i18n="stage.nyc">New York</b><i data-i18n="stage.nyc.tag">midnight avenue</i></button>
+        <button class="stage-btn" data-stage="istanbul" type="button"><b data-i18n="stage.istanbul">İstanbul</b><i data-i18n="stage.istanbul.tag">dusk strait</i></button>
+        <button class="stage-btn" data-stage="tampa" type="button"><b data-i18n="stage.tampa">Tampa</b><i data-i18n="stage.tampa.tag">sunny palms</i></button>
+      </div>
     </div>
 
     <div class="menu-buttons">
-      <div class="menu-label">Play online with your partner</div>
-      <button id="btn-create" class="big-btn" type="button">Create Room — then send them the invite link</button>
+      <div class="menu-label primary-label" data-i18n="menu.onlineLabel">Play online with your partner</div>
+      <button id="btn-create" class="big-btn primary" type="button" data-i18n="menu.create">Create Room — then send the invite link</button>
       <div class="join-row">
-        <input id="join-code" type="text" maxlength="5" placeholder="CODE"
-               autocomplete="off" spellcheck="false" aria-label="Room code">
-        <button id="btn-join" class="big-btn" type="button">Join Room</button>
+        <input id="join-code" type="text" maxlength="5" data-i18n-placeholder="menu.codePlaceholder" placeholder="CODE"
+               autocomplete="off" spellcheck="false" data-i18n-aria="menu.roomCodeAria" aria-label="Room code">
+        <button id="btn-join" class="big-btn" type="button" data-i18n="menu.join">Join Room</button>
       </div>
-      <div class="menu-label">On this device</div>
-      <button id="btn-local" class="big-btn alt" type="button">Local 2P — two players, one keyboard</button>
-      <button id="btn-solo" class="big-btn alt" type="button">Solo — just me</button>
+      <div class="menu-label" data-i18n="menu.deviceLabel">On this device</div>
+      <button id="btn-local" class="big-btn alt" type="button" data-i18n="menu.local">Local 2P — two players, one keyboard</button>
+      <button id="btn-solo" class="big-btn alt" type="button" data-i18n="menu.solo">Solo — just me</button>
     </div>
 
-    <div class="controls-box">
-      <div><b>Online</b> — each player uses their own keyboard: Arrow keys move · <b>↑</b> or <b>X</b> jump · <b>Z</b> hold to run</div>
-      <div><b>Local 2P (same keyboard)</b> — Player 2: <b>A</b>/<b>D</b> move · <b>W</b> or <b>G</b> jump · <b>F</b> hold to run</div>
-      <div>Stomp critters · bump the star blocks · stand on your partner's head for a boost · pop their bubble to bring them back</div>
-      <div><b>M</b> mute · Gamepad works too</div>
-    </div>
+    <!-- how to play: white keyboard keycaps, one numbered card per action -->
+    <section class="howto" aria-labelledby="howto-title">
+      <div class="howto-head">
+        <h2 id="howto-title" data-i18n="howto.title">How to play</h2>
+        <p data-i18n="howto.sub">Two buddies, one screen. Get to the gold flag together.</p>
+      </div>
+
+      <div class="howto-grid">
+        <div class="ctrl-card">
+          <div class="ctrl-head"><span class="ctrl-num">1</span><h3 data-i18n="ctrl.move">Move</h3></div>
+          <div class="ctrl-cols">
+            <div class="ctrl-col">
+              <span class="ctrl-cap"><span class="dot amber"></span><span data-i18n="ctrl.p1">Player 1</span></span>
+              <div class="keycluster">
+                <canvas class="key-preview" data-key="left" width="64" height="64" aria-hidden="true"></canvas>
+                <canvas class="key-preview" data-key="up" width="64" height="64" aria-hidden="true"></canvas>
+                <canvas class="key-preview" data-key="right" width="64" height="64" aria-hidden="true"></canvas>
+              </div>
+            </div>
+            <div class="ctrl-col">
+              <span class="ctrl-cap"><span class="dot teal"></span><span data-i18n="ctrl.p2">Player 2</span></span>
+              <div class="keycluster wasd">
+                <span class="chev up" aria-hidden="true"></span>
+                <span class="chev left" aria-hidden="true"></span>
+                <span class="chev right" aria-hidden="true"></span>
+                <canvas class="key-preview" data-key="W" width="64" height="64" aria-hidden="true"></canvas>
+                <canvas class="key-preview" data-key="A" width="64" height="64" aria-hidden="true"></canvas>
+                <canvas class="key-preview" data-key="D" width="64" height="64" aria-hidden="true"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="ctrl-card">
+          <div class="ctrl-head"><span class="ctrl-num">2</span><h3 data-i18n="ctrl.jump">Jump</h3></div>
+          <div class="ctrl-cols">
+            <div class="ctrl-col">
+              <span class="ctrl-cap"><span class="dot amber"></span><span data-i18n="ctrl.p1">Player 1</span></span>
+              <div class="keycluster">
+                <canvas class="key-preview" data-key="up" width="64" height="64" aria-hidden="true"></canvas>
+                <span class="key-or">/</span>
+                <canvas class="key-preview" data-key="X" width="64" height="64" aria-hidden="true"></canvas>
+              </div>
+            </div>
+            <div class="ctrl-col">
+              <span class="ctrl-cap"><span class="dot teal"></span><span data-i18n="ctrl.p2">Player 2</span></span>
+              <div class="keycluster">
+                <canvas class="key-preview" data-key="W" width="64" height="64" aria-hidden="true"></canvas>
+                <span class="key-or">/</span>
+                <canvas class="key-preview" data-key="G" width="64" height="64" aria-hidden="true"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="ctrl-card">
+          <div class="ctrl-head"><span class="ctrl-num">3</span><h3 data-i18n="ctrl.run">Run · hold</h3></div>
+          <div class="ctrl-cols">
+            <div class="ctrl-col">
+              <span class="ctrl-cap"><span class="dot amber"></span><span data-i18n="ctrl.p1">Player 1</span></span>
+              <div class="keycluster">
+                <canvas class="key-preview" data-key="Z" width="64" height="64" aria-hidden="true"></canvas>
+              </div>
+            </div>
+            <div class="ctrl-col">
+              <span class="ctrl-cap"><span class="dot teal"></span><span data-i18n="ctrl.p2">Player 2</span></span>
+              <div class="keycluster">
+                <canvas class="key-preview" data-key="F" width="64" height="64" aria-hidden="true"></canvas>
+              </div>
+            </div>
+          </div>
+          <span class="ctrl-note" data-i18n="ctrl.runNote">hold it while you move</span>
+        </div>
+      </div>
+
+      <ul class="howto-tips">
+        <li data-i18n-html="tip.online"><b>Online</b> — each player uses their own keyboard, and everyone uses the Player 1 keys.</li>
+        <li data-i18n="tip.pickups">Bump gold blocks for bananas · a jar grants a second heart · three lives per run.</li>
+        <li data-i18n="tip.team">Both floor plates open the gate · stand on your buddy's head for a boost · pop their bubble to bring them back.</li>
+        <li data-i18n="tip.close">Stay close: fall too far behind and you are floated back to your partner in a bubble.</li>
+        <li data-i18n-html="tip.keys"><b>M</b> mutes · a gamepad works for Player 1 · on a phone, use the touch pad under the stage.</li>
+      </ul>
+    </section>
     <p id="menu-status" class="status" role="status"></p>
   </section>
 
   <!-- ============ LOBBY ============ -->
   <section id="view-lobby" class="panel hidden">
-    <h2>Room <span id="lobby-code" class="room-code">-----</span></h2>
+    <div class="lobby-head">
+      <h2><span data-i18n="lobby.room">Room</span> <span id="lobby-code" class="room-code">-----</span></h2>
+      <p class="hint" data-i18n="lobby.hint">Send the invite link — your partner joins straight into this room.</p>
+    </div>
     <div class="invite-row">
-      <input id="invite-link" type="text" readonly aria-label="Invite link">
-      <button id="btn-copy" type="button">Copy invite link</button>
+      <input id="invite-link" type="text" readonly data-i18n-aria="lobby.hint" aria-label="Invite link">
+      <button id="btn-copy" type="button" data-i18n="lobby.copy">Copy invite link</button>
     </div>
     <ul id="player-list" class="player-list"></ul>
-    <div class="pick-row">
-      <span class="pick-label">Character:</span>
-      <button id="lobby-pick-red" class="pick-btn char-btn" data-pick="red" type="button"><canvas class="char-preview" data-color="red" width="28" height="40"></canvas> S.C.</button>
-      <button id="lobby-pick-green" class="pick-btn char-btn" data-pick="green" type="button"><canvas class="char-preview" data-color="green" width="28" height="40"></canvas> B.T.</button>
+    <div class="pick-row compact" role="group" data-i18n-aria="lobby.character" aria-label="Character">
+      <div class="pick-label" data-i18n="lobby.character">Character</div>
+      <div class="pick-cards small">
+        <button id="lobby-pick-red" class="pick-btn char-btn" data-pick="red" type="button">
+          <canvas class="char-preview" data-color="red" width="80" height="100" aria-hidden="true"></canvas>
+          <span class="char-name">S.C.</span>
+        </button>
+        <button id="lobby-pick-green" class="pick-btn char-btn" data-pick="green" type="button">
+          <canvas class="char-preview" data-color="green" width="80" height="100" aria-hidden="true"></canvas>
+          <span class="char-name">B.T.</span>
+        </button>
+      </div>
       <span id="pick-note" class="pick-note"></span>
     </div>
+    <div class="stage-pick compact">
+      <div class="pick-label" data-i18n="lobby.stage">Stage</div>
+      <div class="stage-row" id="lobby-stage-row" role="group" data-i18n-aria="lobby.stage" aria-label="Stage">
+        <button class="stage-btn selected" data-stage="izmir" type="button"><b data-i18n="stage.izmir">İzmir</b><i data-i18n="stage.izmir.tag">sunset coast</i></button>
+        <button class="stage-btn" data-stage="nyc" type="button"><b data-i18n="stage.nyc">New York</b><i data-i18n="stage.nyc.tag">midnight avenue</i></button>
+        <button class="stage-btn" data-stage="istanbul" type="button"><b data-i18n="stage.istanbul">İstanbul</b><i data-i18n="stage.istanbul.tag">dusk strait</i></button>
+        <button class="stage-btn" data-stage="tampa" type="button"><b data-i18n="stage.tampa">Tampa</b><i data-i18n="stage.tampa.tag">sunny palms</i></button>
+      </div>
+      <span id="stage-note" class="pick-note"></span>
+    </div>
     <div class="lobby-buttons">
-      <button id="btn-ready" class="big-btn" type="button">Ready</button>
-      <button id="btn-start" class="big-btn" type="button" disabled>Start Game</button>
-      <button id="btn-leave-lobby" class="big-btn alt" type="button">Leave</button>
+      <button id="btn-ready" class="big-btn" type="button" data-i18n="lobby.ready">Ready</button>
+      <button id="btn-start" class="big-btn primary" type="button" disabled data-i18n="lobby.start">Start Game</button>
+      <button id="btn-leave-lobby" class="big-btn alt" type="button" data-i18n="lobby.leave">Leave</button>
     </div>
     <p id="lobby-status" class="status" role="status"></p>
   </section>
@@ -71,32 +204,69 @@
   <!-- ============ GAME ============ -->
   <section id="view-game" class="hidden">
     <div class="hud">
-      <span>BANANAS <b id="hud-coins">0</b></span>
-      <span>SCORE <b id="hud-score">0</b></span>
-      <span>TIME <b id="hud-time">300</b></span>
+      <span class="hud-chip lives-chip" id="hud-lives-chip"><span class="hud-label" data-i18n="hud.lives">Lives</span><b id="hud-lives">3</b></span>
+      <span class="hud-chip hearts-chip" id="hud-hearts-red"><span class="who">S.C.</span><b class="hearts">♥♡</b></span>
+      <span class="hud-chip hearts-chip" id="hud-hearts-green"><span class="who">B.T.</span><b class="hearts">♥♡</b></span>
+      <span class="hud-chip"><span data-i18n="hud.bananas">Bananas</span> <b id="hud-coins">0</b></span>
+      <span class="hud-chip"><span data-i18n="hud.score">Score</span> <b id="hud-score">0</b></span>
+      <span class="hud-chip"><span data-i18n="hud.time">Time</span> <b id="hud-time">300</b></span>
+      <span class="hud-chip stage" id="hud-stage">İzmir</span>
       <span id="hud-mode"></span>
-      <button id="btn-mute" type="button" title="Mute (M)">Sound: on</button>
-      <button id="btn-leave-game" type="button">Leave</button>
+      <span class="sound-box">
+        <button id="btn-mute" type="button" data-i18n="hud.soundOn" data-i18n-title="hud.muteTitle" title="Mute (M)">Sound: on</button>
+        <input id="vol" class="vol" type="range" min="0" max="100" step="1" value="80"
+               data-i18n-aria="hud.volume" aria-label="Volume">
+      </span>
+      <button id="btn-leave-game" type="button" data-i18n="hud.leave">Leave</button>
     </div>
     <div class="stage-wrap">
-      <canvas id="stage" width="512" height="288"></canvas>
+      <canvas id="stage" width="1024" height="576"></canvas>
       <div id="overlay" class="overlay hidden">
+        <div id="summary" class="summary hidden" role="group" data-i18n-aria="summary.aria" aria-label="Run summary">
+          <p id="summary-kicker" class="summary-kicker">STAGE CLEAR</p>
+          <h2 id="summary-title" class="summary-title">İzmir</h2>
+          <p id="summary-sub" class="summary-sub"></p>
+          <div id="summary-stats" class="summary-stats"></div>
+          <div class="summary-best">
+            <h3><span data-i18n="summary.yourBest">Your best</span> <span id="summary-mode"></span></h3>
+            <div id="summary-best-rows"></div>
+          </div>
+          <p id="summary-hint" class="summary-hint"></p>
+        </div>
         <div id="overlay-text"></div>
-        <button id="btn-again" class="big-btn hidden" type="button">Play Again</button>
-        <button id="btn-overlay-leave" class="big-btn alt" type="button">Back to Menu</button>
+        <div class="overlay-buttons">
+          <button id="btn-again" class="big-btn primary hidden" type="button" data-i18n="summary.playAgain">Play Again</button>
+          <button id="btn-overlay-leave" class="big-btn alt" type="button" data-i18n="summary.backToMenu">Back to Menu</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- touch pad: only shown on touch devices, below the stage -->
+    <div id="touch-pad" class="touch-pad hidden" role="group" data-i18n-aria="touch.aria" aria-label="Touch controls">
+      <div class="touch-side">
+        <button class="tbtn" type="button" data-touch="l" data-i18n-aria="touch.left" aria-label="Move left">◀</button>
+        <button class="tbtn" type="button" data-touch="r" data-i18n-aria="touch.right" aria-label="Move right">▶</button>
+      </div>
+      <div class="touch-side">
+        <button class="tbtn jump" type="button" data-touch="u" data-i18n="touch.jump" data-i18n-aria="touch.jump" aria-label="Jump">Jump</button>
+        <button class="tbtn run" type="button" data-touch="run" data-i18n="touch.run" data-i18n-aria="touch.run" aria-label="Run">Run</button>
       </div>
     </div>
     <p id="game-status" class="status" role="status"></p>
   </section>
 
-  <footer>no accounts · no downloads · rooms are private to anyone with the code</footer>
+  <footer data-i18n="footer">no accounts · no downloads · rooms are private to anyone with the code</footer>
 </main>
 
+<script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/engine.js?v=7"></script>
-<script src="js/sprites.js?v=7"></script>
-<script src="js/audio.js?v=7"></script>
-<script src="js/net.js?v=7"></script>
-<script src="js/main.js?v=7"></script>
+<script src="js/i18n.js?v=32"></script>
+<script src="js/engine.js?v=32"></script>
+<script src="js/camera.js?v=32"></script>
+<script src="js/render3d.js?v=32"></script>
+<script src="js/audio.js?v=32"></script>
+<script src="js/net.js?v=32"></script>
+<script src="js/progress.js?v=32"></script>
+<script src="js/main.js?v=32"></script>
 </body>
 </html>

@@ -11,6 +11,14 @@
   var T = { EMPTY: 0, SOLID: 1, BRICK: 2, QBLOCK: 3, PBLOCK: 4, USED: 5, GATE: 6 };
   var LEVEL_W = 200, LEVEL_H = 18;
 
+  /* Co-op catch-up rule. When the two players split further than
+   * SPLIT_FOLLOW the camera follows whoever is ahead, and once the one
+   * behind is off the left edge (CARRY_GAP) they are swept up in a carry
+   * bubble and floated back to their partner, so nobody can drag the
+   * camera backwards or get stranded off-screen. */
+  var SPLIT_FOLLOW = 190;
+  var CARRY_GAP = 250;
+
   /* ------------------------------------------------------------------ */
   /* Level construction (all layout is original, built from helpers)     */
   /* ------------------------------------------------------------------ */
@@ -112,7 +120,8 @@
       x: tx * TILE + 2, y: 13 * TILE, w: 12, h: 22,
       vx: 0, vy: 0, face: 1, onGround: false, coyote: 0, jbuf: 0, jumpHeld: false,
       hp: 1, big: false, state: 'play', invuln: 0, stateT: 0, squash: 0,
-      onPartner: false, onPlatform: null, skid: false, animT: 0, absent: false
+      onPartner: false, onPlatform: null, skid: false, animT: 0, absent: false,
+      safeY: 13 * TILE, bubbleX: null, bubbleY: null, carry: false
     };
   }
 
@@ -132,7 +141,7 @@
       players = [makePlayer(0, 'red', 2), makePlayer(1, 'green', 4)];
     }
     return {
-      mode: opts.mode || 'local', twoPlayer: two,
+      mode: opts.mode || 'local', twoPlayer: two, stage: opts.stage || 'izmir',
       tick: 0, tiles: level.tiles, baseTiles: level.tiles.slice(),
       levelW: level.w, levelH: level.h,
       coinsArr: level.coins, enemies: level.enemies,
@@ -142,10 +151,40 @@
       midReached: false, checkpoint: { x: 2 * TILE, y: 13 * TILE },
       players: players,
       berries: [], coinCount: 0, score: 0,
+      lives: 3, gameOver: false, respawnAt: 0,
       timeLeft: 300 * 60, finished: false, finishTick: 0,
+      runTicks: 0,
       camX: 0, events: [], tileDiff: {},
       rng: 12345
     };
+  }
+
+  /* True when the AABB overlaps any solid tile. Used as a safety net so
+   * a player can never end up buried inside terrain (which made them
+   * vanish behind the tiles when the camera tether shoved them). */
+  function blockedBox(st, x, y, w, h) {
+    if (!isFinite(x) || !isFinite(y)) return true;
+    var tx0 = Math.floor(x / TILE), tx1 = Math.floor((x + w - 0.01) / TILE);
+    var ty0 = Math.floor(y / TILE), ty1 = Math.floor((y + h - 0.01) / TILE);
+    for (var ty = ty0; ty <= ty1; ty++) {
+      for (var tx = tx0; tx <= tx1; tx++) {
+        if (solidAt(st, tx, ty)) return true;
+      }
+    }
+    return false;
+  }
+
+  /* Place an entity at (x,y), clamped inside the level and lifted out of
+   * any terrain it would otherwise overlap. */
+  function safePlace(st, p, x, y) {
+    if (!isFinite(x)) x = st.checkpoint.x;
+    if (!isFinite(y)) y = st.checkpoint.y;
+    var maxX = st.levelW * TILE - p.w;
+    if (x < 0) x = 0;
+    if (x > maxX) x = maxX;
+    if (y > st.levelH * TILE) y = st.checkpoint.y;
+    for (var i = 0; i < 12 && blockedBox(st, x, y, p.w, p.h); i++) y -= TILE;
+    p.x = x; p.y = y; p.vx = 0; p.vy = 0;
   }
 
   function tileAt(st, tx, ty) {
@@ -210,9 +249,105 @@
   /* ------------------------------------------------------------------ */
   var EMPTY_INPUT = { l: false, r: false, u: false, d: false, run: false };
 
-  function knockOut(st, p) {
-    p.state = 'bubble'; p.stateT = 0; p.vx = 0; p.vy = 0; p.big = false; p.hp = 1;
+  /* A player who runs out of hearts is "down". Solo loses a life straight
+   * away (no bubble); co-op puts them in a bubble for the partner to pop.
+   * If both partners are down at the same time the team loses a life and
+   * both restart at the checkpoint, like a classic platformer. */
+  function downPlayer(st, p) {
+    if (st.gameOver || p.state === 'ko' || p.state === 'bubble') return;
+    if (!st.twoPlayer) { loseLife(st); return; }
+    var partnerDown = false;
+    for (var i = 0; i < st.players.length; i++) {
+      var q = st.players[i];
+      if (q !== p && !q.absent && q.state === 'bubble') partnerDown = true;
+    }
+    if (partnerDown || !hasPartner(st, p)) { loseLife(st); return; }
+    p.state = 'bubble'; p.stateT = 0; p.vx = 0; p.vy = 0;
+    p.big = false; p.hp = 1; p.stuck = 0; p.onPartner = false; p.onPlatform = null;
+    /* It hovers where they went down, lifted clear of the floor, and stays
+     * there. It must NOT drift into the partner on its own: the rescue has
+     * to be a deliberate touch, and the bubble is a real state the team can
+     * lose a life while sitting in. */
+    /* Anchor to the last spot they stood on, so a pit death leaves the
+     * bubble floating above the hole instead of buried in the floor. */
+    var anchorY = (typeof p.safeY === 'number' && p.y > p.safeY) ? p.safeY : p.y;
+    p.bubbleX = Math.max(10, Math.min(st.levelW * TILE - 10, p.x + p.w / 2));
+    p.bubbleY = Math.max(22, anchorY - 26);
     ev(st, 'out');
+  }
+
+  function hasPartner(st, p) {
+    for (var i = 0; i < st.players.length; i++) {
+      var q = st.players[i];
+      if (q !== p && !q.absent) return true;
+    }
+    return false;
+  }
+
+  /* Catch-up sweep: a partner left far behind and off the left edge is
+   * lifted into a carry bubble and flown to whoever is in front. It costs
+   * no life and keeps whatever power state they had — it exists so nobody
+   * can be stranded off-screen or drag the camera back onto the leader. */
+  function sweepStraggler(st) {
+    if (!st.twoPlayer || st.finished || st.gameOver || st.respawnAt) return;
+    var lead = null;
+    for (var i = 0; i < st.players.length; i++) {
+      var p = st.players[i];
+      if (p.absent || p.state !== 'play') continue;
+      if (!lead || p.x > lead.x) lead = p;
+    }
+    if (!lead) return;
+    for (var j = 0; j < st.players.length; j++) {
+      var q = st.players[j];
+      if (q === lead || q.absent || q.state !== 'play') continue;
+      if (lead.x - q.x < CARRY_GAP) continue;
+      if (q.x + q.w > st.camX + 6) continue;          // still on screen
+      q.state = 'bubble'; q.stateT = 0; q.carry = true; q.vx = 0; q.vy = 0;
+      q.stuck = 0; q.onPartner = false; q.onPlatform = null;
+      q.bubbleX = q.x + q.w / 2;
+      q.bubbleY = Math.max(22, (typeof q.safeY === 'number' ? q.safeY : q.y) - 26);
+      ev(st, 'out');
+    }
+  }
+
+  /* Team life loss: freeze everyone briefly, then respawn at the checkpoint. */
+  function loseLife(st) {
+    if (st.gameOver || st.respawnAt) return;
+    st.lives = Math.max(0, st.lives - 1);
+    for (var i = 0; i < st.players.length; i++) {
+      var p = st.players[i];
+      if (p.absent) continue;
+      p.state = 'ko'; p.stateT = 0; p.vx = 0; p.vy = 0;
+      p.hp = 1; p.big = false; p.onPartner = false; p.onPlatform = null; p.stuck = 0;
+      p.bubbleX = p.bubbleY = null; p.carry = false;
+      /* pop out of view where they last stood, so a pit death doesn't
+       * animate invisibly under the level */
+      if (typeof p.safeY === 'number' && p.y > p.safeY) p.y = p.safeY;
+    }
+    ev(st, 'lifeloss');
+    if (st.lives <= 0) {
+      st.gameOver = true;
+      ev(st, 'gameover');
+    } else {
+      st.respawnAt = st.tick + 45;
+    }
+  }
+
+  function respawnPlayers(st) {
+    st.respawnAt = 0;
+    for (var i = 0; i < st.players.length; i++) {
+      var p = st.players[i];
+      if (p.absent) continue;
+      p.state = 'play'; p.hp = 1; p.big = false; p.invuln = 140;
+      p.stateT = 0; p.stuck = 0; p.onPartner = false; p.onPlatform = null;
+      p.bubbleX = p.bubbleY = null; p.carry = false;
+      safePlace(st, p, st.checkpoint.x + i * 26, st.checkpoint.y - 10);
+    }
+    var maxCam = st.levelW * TILE - VIEW_W;
+    var c = st.checkpoint.x - VIEW_W / 2;
+    if (c < 0) c = 0;
+    if (c > maxCam) c = maxCam;
+    st.camX = c;
   }
 
   function hurtPlayer(st, p, fromX) {
@@ -222,38 +357,61 @@
       p.vx = (p.x + p.w / 2 < fromX ? -1.6 : 1.6); p.vy = -3.4;
       ev(st, 'shrink');
     } else {
-      knockOut(st, p);
+      downPlayer(st, p);
     }
   }
 
   function stepPlayer(st, p, input, partner) {
-    if (p.absent || p.state === 'absent') return;
+    if (p.absent || p.state === 'absent' || p.state === 'ko') return;
     p.animT++;
     if (p.invuln > 0) p.invuln--;
     if (p.squash > 0) p.squash--;
 
     if (p.state === 'bubble') {
       p.stateT++;
-      // float toward a hover point above the partner (or checkpoint)
-      var anchor = (partner && !partner.absent && partner.state === 'play')
-        ? { x: partner.x + partner.w / 2, y: partner.y - 2 }
-        : { x: st.checkpoint.x + 8, y: st.checkpoint.y - 40 };
+      /* being carried to the partner: a short guided flight, then it pops */
+      if (p.carry) {
+        var host = (partner && !partner.absent && partner.state === 'play') ? partner : null;
+        if (!host) {
+          p.carry = false;                       // leader gone: wait to be rescued
+        } else {
+          var hx = host.x + host.w / 2, hy = host.y + host.h / 2 - 10;
+          var dx = hx - (p.x + p.w / 2), dy = hy - (p.y + p.h / 2);
+          var dist = Math.sqrt(dx * dx + dy * dy) || 1;
+          var spd = Math.min(9, 3.2 + p.stateT * 0.14);   // eases in, then catches up
+          p.x += (dx / dist) * spd + Math.sin(p.stateT * 0.16) * 0.2;
+          p.y += (dy / dist) * spd + Math.cos(p.stateT * 0.13) * 0.2;
+          if (dist < 26) {
+            p.state = 'play'; p.carry = false; p.invuln = 140; p.vx = 0; p.vy = 0;
+            safePlace(st, p, host.x - p.w / 2, host.y);
+            ev(st, 'pop');
+          }
+          return;
+        }
+      }
+      if (p.bubbleX == null || p.bubbleY == null) {
+        p.bubbleX = p.x + p.w / 2;
+        p.bubbleY = Math.max(22, p.y - 26);
+      }
       var cx = p.x + p.w / 2, cy = p.y + p.h / 2;
-      p.x += (anchor.x - cx) * 0.045 + Math.sin(p.stateT * 0.08) * 0.3;
-      p.y += (anchor.y - cy) * 0.045 + Math.cos(p.stateT * 0.06) * 0.2;
-      // partner pops the bubble by touching it
-      if (partner && !partner.absent && partner.state === 'play' && p.stateT > 40 && overlap(p, partner)) {
-        p.state = 'play'; p.invuln = 130; p.vy = 0; p.vx = 0;
-        p.y = partner.y - p.h - 1;
+      // bobbing hover around the spot where they went down
+      p.x += (p.bubbleX - cx) * 0.06 + Math.sin(p.stateT * 0.07) * 0.25;
+      p.y += (p.bubbleY - cy) * 0.06 + Math.cos(p.stateT * 0.05) * 0.2;
+      // the partner pops it by jumping into it
+      if (partner && !partner.absent && partner.state === 'play' && p.stateT > 18 && overlap(p, partner)) {
+        p.state = 'play'; p.carry = false; p.invuln = 130; p.vy = 0; p.vx = 0;
+        safePlace(st, p, partner.x, partner.y - p.h - 1);
         ev(st, 'pop');
-      } else if ((!partner || partner.absent || partner.state !== 'play') && p.stateT > 90) {
-        // solo / both out: respawn at checkpoint
+      } else if ((!partner || partner.absent || partner.state !== 'play') && p.stateT > 420) {
+        // nobody left to rescue them: back to the checkpoint
         p.state = 'play'; p.invuln = 130;
-        p.x = st.checkpoint.x; p.y = st.checkpoint.y; p.vx = 0; p.vy = 0;
+        safePlace(st, p, st.checkpoint.x, st.checkpoint.y);
+        p.bubbleX = p.bubbleY = null;
         ev(st, 'pop');
       }
       return;
     }
+    p.bubbleX = p.bubbleY = null;
 
     /* --- platform carry --- */
     if (p.onPlatform) { p.x += p.onPlatform.dx; p.y += p.onPlatform.dy; }
@@ -304,6 +462,14 @@
     if (bumped) bumpTile(st, p, bumped);
     if (p.onGround && !wasGround && p._fallV > 4) ev(st, 'land');
     p._fallV = p.vy;
+    if (p.onGround && !blockedBox(st, p.x, p.y, p.w, p.h)) p.safeY = p.y;
+
+    /* never stay buried in terrain: nudge out, and if that fails lift
+     * the player to the nearest free spot above */
+    if (blockedBox(st, p.x, p.y, p.w, p.h)) {
+      p.stuck = (p.stuck || 0) + 1;
+      if (p.stuck > 6) { safePlace(st, p, p.x, p.y - 1); p.stuck = 0; }
+    } else p.stuck = 0;
 
     /* --- moving platforms: land on top --- */
     for (var i = 0; i < st.platforms.length; i++) {
@@ -316,7 +482,7 @@
     }
 
     /* --- pit fall --- */
-    if (p.y > st.levelH * TILE + 24) { knockOut(st, p); return; }
+    if (p.y > st.levelH * TILE + 24) { downPlayer(st, p); return; }
 
     /* --- coins --- */
     for (var ci = 0; ci < st.coinsArr.length; ci++) {
@@ -448,7 +614,7 @@
           if (horiz && A.vy >= 0 && footY >= B.y - 1 && footY <= B.y + 9 && A.y < B.y) {
             if (A.vy > 4.4) { // bouncy landing on a head
               A.vy = -5.4; B.squash = 10; ev(st, 'boing');
-            } else {
+            } else if (!blockedBox(st, A.x, B.y - A.h, A.w, A.h)) {
               A.y = B.y - A.h; A.vy = 0; A.onGround = true; A.onPartner = true;
             }
           }
@@ -495,40 +661,45 @@
     }
     if (st.gateLatched && st.gateOpen < 1) st.gateOpen = Math.min(1, st.gateOpen + 0.02);
 
-    // timer
-    if (!st.finished && st.timeLeft > 0) {
+    // timer (paused during the short out-of-lives/respawn freeze)
+    if (!st.finished && !st.respawnAt && !st.gameOver && st.timeLeft > 0) {
       st.timeLeft--;
       if (st.timeLeft === 0) {
         ev(st, 'timeout');
-        for (var ri = 0; ri < st.players.length; ri++) {
-          var rp = st.players[ri];
-          if (rp.absent) continue;
-          rp.state = 'play'; rp.x = st.checkpoint.x + ri * 20; rp.y = st.checkpoint.y;
-          rp.vx = 0; rp.vy = 0; rp.invuln = 130;
-        }
         st.timeLeft = 300 * 60;
+        loseLife(st);
       }
     }
-    // camera: frame both active players
+    // camera: frame both active players, but when they split up follow the
+    // one in front — averaging a straggler back into view is what used to
+    // drag the leader into terrain and crush them on screen
     var xs = [];
     for (var ci = 0; ci < st.players.length; ci++) {
       var cp = st.players[ci];
       if (!cp.absent && cp.state === 'play') xs.push(cp.x + cp.w / 2);
     }
     if (xs.length) {
-      var mid = xs.reduce(function (a, b) { return a + b; }, 0) / xs.length;
+      var lead = Math.max.apply(null, xs), tail = Math.min.apply(null, xs);
+      var split = xs.length > 1 && lead - tail > SPLIT_FOLLOW;
+      var mid = split ? lead : xs.reduce(function (a, b) { return a + b; }, 0) / xs.length;
       var target = mid - VIEW_W / 2;
       var maxCam = st.levelW * TILE - VIEW_W;
       if (target < 0) target = 0; if (target > maxCam) target = maxCam;
       st.camX += (target - st.camX) * 0.12;
-      // tether: keep players inside the camera view
+      /* Keep everyone inside the level itself. The old camera tether that
+       * dragged players to the view edge is gone: it could shove them into
+       * terrain, and a partner left behind is now flown forward in a carry
+       * bubble instead of being yanked through the floor. */
       for (var ti = 0; ti < st.players.length; ti++) {
         var tp = st.players[ti];
         if (tp.absent || tp.state !== 'play') continue;
-        if (tp.x < st.camX + 4) tp.x = st.camX + 4;
-        if (tp.x + tp.w > st.camX + VIEW_W - 4) tp.x = st.camX + VIEW_W - 4 - tp.w;
+        if (tp.x < 0) tp.x = 0;
+        var maxX = st.levelW * TILE - tp.w;
+        if (tp.x > maxX) tp.x = maxX;
       }
     }
+
+    sweepStraggler(st);
   }
 
   /* ------------------------------------------------------------------ */
@@ -536,8 +707,13 @@
   /* ------------------------------------------------------------------ */
   function step(st, inputs) {
     st.events.length = 0;
-    if (st.finished) { st.tick++; return; }
+    if (st.finished || st.gameOver) { st.tick++; return; }
+    /* active play time, used by the end-of-run summary (does not run once
+     * the stage is over, so it is the elapsed time of the run) */
+    st.runTicks = (st.runTicks || 0) + 1;
+    if (st.respawnAt && st.tick >= st.respawnAt) respawnPlayers(st);
     stepWorld(st);
+    if (st.gameOver) { st.tick++; return; }
     for (var i = 0; i < st.enemies.length; i++) stepEnemy(st, st.enemies[i]);
     for (var b = st.berries.length - 1; b >= 0; b--) {
       stepBerry(st, st.berries[b]);
@@ -548,6 +724,7 @@
     stepPlayer(st, st.players[0], st.players[0].slot === 0 ? in0 : in1, st.players[1]);
     stepPlayer(st, st.players[1], st.players[1].slot === 1 ? in1 : in0, st.players[0]);
     interact(st);
+    sanitize(st);
     st.tick++;
   }
 
@@ -561,6 +738,19 @@
     step(st, per);
   }
 
+  /* Last-resort guard: a non-finite position would make the 3D model
+   * disappear forever, so recover immediately at the checkpoint. */
+  function sanitize(st) {
+    for (var i = 0; i < st.players.length; i++) {
+      var p = st.players[i];
+      if (p.absent) continue;
+      if (!isFinite(p.x) || !isFinite(p.y) || !isFinite(p.vx) || !isFinite(p.vy)) {
+        p.state = 'play'; p.invuln = 120; p.stuck = 0;
+        safePlace(st, p, st.checkpoint.x, st.checkpoint.y);
+      }
+    }
+  }
+
   /* ------------------------------------------------------------------ */
   /* Snapshots (netplay)                                                 */
   /* ------------------------------------------------------------------ */
@@ -569,6 +759,7 @@
     return {
       tick: st.tick, camX: round1(st.camX), coins: st.coinCount, score: st.score,
       timeLeft: st.timeLeft, finished: st.finished, mid: st.midReached,
+      lives: st.lives, over: st.gameOver ? 1 : 0, runTicks: st.runTicks || 0,
       gateOpen: round1(st.gateOpen * 100) / 100, gateLatched: st.gateLatched,
       switches: st.switches.map(function (s) { return s.pressed ? 1 : 0; }),
       players: st.players.map(function (p) {
@@ -587,10 +778,14 @@
   function applySnapshot(st, s) {
     st.tick = s.tick; st.camX = s.camX; st.coinCount = s.coins; st.score = s.score;
     st.timeLeft = s.timeLeft; st.finished = s.finished; st.midReached = s.mid;
+    if (typeof s.lives === 'number') st.lives = s.lives;
+    st.runTicks = typeof s.runTicks === 'number' ? s.runTicks : 0;
+    st.gameOver = !!s.over;
     st.gateOpen = s.gateOpen; st.gateLatched = s.gateLatched;
     s.switches.forEach(function (v, i) { st.switches[i].pressed = !!v; });
     s.players.forEach(function (a, i) {
       var p = st.players[i]; if (!p) return;
+      if (!isFinite(a[0]) || !isFinite(a[1])) return;   // ignore corrupt snapshot rows
       p.x = a[0]; p.y = a[1]; p.vx = a[2]; p.vy = a[3]; p.face = a[4];
       p.big = !!a[5]; p.state = a[6]; p.invuln = a[7] ? 10 : 0; p.squash = a[8] ? 5 : 0;
       p.absent = !!a[9]; p.skid = !!a[10]; p.animT++;
