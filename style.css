@@ -97,3 +97,13 @@ canvas#stage {
 }
 #overlay-text { font-size: clamp(16px, 3vw, 24px); line-height: 1.6; color: #fff; white-space: pre-line; }
 footer { margin-top: 22px; color: #667; font-size: 12px; }
+
+.menu-label {
+  margin: 14px 0 6px;
+  font-size: 12px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  opacity: 0.75;
+  text-align: left;
+}
+.menu-label:first-child { margin-top: 0; }
