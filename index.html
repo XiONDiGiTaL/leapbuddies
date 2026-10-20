@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Interactive Experience</title>
+<meta name="description" content="A lightweight browser-based interactive application with real-time session connectivity.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main id="app">
+  <h1 class="logo">LEAP&nbsp;BUDDIES</h1>
+  <p class="tagline">a two-player co-op platform adventure — right in your browser</p>
+
+  <!-- ============ MENU ============ -->
+  <section id="view-menu" class="panel">
+    <div class="pick-row" role="group" aria-label="Your character">
+      <span class="pick-label">You play as:</span>
+      <button id="pick-red" class="pick-btn selected" data-pick="red" type="button">
+        <span class="dot dot-red"></span> Red
+      </button>
+      <button id="pick-green" class="pick-btn" data-pick="green" type="button">
+        <span class="dot dot-green"></span> Green
+      </button>
+    </div>
+
+    <div class="menu-buttons">
+      <button id="btn-create" class="big-btn" type="button">Create Room</button>
+      <div class="join-row">
+        <input id="join-code" type="text" maxlength="5" placeholder="CODE"
+               autocomplete="off" spellcheck="false" aria-label="Room code">
+        <button id="btn-join" class="big-btn" type="button">Join Room</button>
+      </div>
+      <button id="btn-local" class="big-btn alt" type="button">Local 2P — one keyboard</button>
+      <button id="btn-solo" class="big-btn alt" type="button">Solo — just me</button>
+    </div>
+
+    <div class="controls-box">
+      <div><b>Player 1</b> — Arrow keys move · <b>↑</b> or <b>X</b> jump · <b>Z</b> hold to run</div>
+      <div><b>Player 2</b> — <b>A</b>/<b>D</b> move · <b>W</b> or <b>G</b> jump · <b>F</b> hold to run</div>
+      <div>Stomp critters · bump the star blocks · stand on your partner's head for a boost · pop their bubble to bring them back</div>
+      <div><b>M</b> mute · Gamepad works for Player 1 too</div>
+    </div>
+    <p id="menu-status" class="status" role="status"></p>
+  </section>
+
+  <!-- ============ LOBBY ============ -->
+  <section id="view-lobby" class="panel hidden">
+    <h2>Room <span id="lobby-code" class="room-code">-----</span></h2>
+    <div class="invite-row">
+      <input id="invite-link" type="text" readonly aria-label="Invite link">
+      <button id="btn-copy" type="button">Copy invite link</button>
+    </div>
+    <ul id="player-list" class="player-list"></ul>
+    <div class="pick-row">
+      <span class="pick-label">Character:</span>
+      <button id="lobby-pick-red" class="pick-btn" data-pick="red" type="button"><span class="dot dot-red"></span> Red</button>
+      <button id="lobby-pick-green" class="pick-btn" data-pick="green" type="button"><span class="dot dot-green"></span> Green</button>
+      <span id="pick-note" class="pick-note"></span>
+    </div>
+    <div class="lobby-buttons">
+      <button id="btn-ready" class="big-btn" type="button">Ready</button>
+      <button id="btn-start" class="big-btn" type="button" disabled>Start Game</button>
+      <button id="btn-leave-lobby" class="big-btn alt" type="button">Leave</button>
+    </div>
+    <p id="lobby-status" class="status" role="status"></p>
+  </section>
+
+  <!-- ============ GAME ============ -->
+  <section id="view-game" class="hidden">
+    <div class="hud">
+      <span>COINS <b id="hud-coins">0</b></span>
+      <span>SCORE <b id="hud-score">0</b></span>
+      <span>TIME <b id="hud-time">300</b></span>
+      <span id="hud-mode"></span>
+      <button id="btn-mute" type="button" title="Mute (M)">Sound: on</button>
+      <button id="btn-leave-game" type="button">Leave</button>
+    </div>
+    <div class="stage-wrap">
+      <canvas id="stage" width="512" height="288"></canvas>
+      <div id="overlay" class="overlay hidden">
+        <div id="overlay-text"></div>
+        <button id="btn-again" class="big-btn hidden" type="button">Play Again</button>
+        <button id="btn-overlay-leave" class="big-btn alt" type="button">Back to Menu</button>
+      </div>
+    </div>
+    <p id="game-status" class="status" role="status"></p>
+  </section>
+
+  <footer>no accounts · no downloads · rooms are private to anyone with the code</footer>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/sprites.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/net.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
