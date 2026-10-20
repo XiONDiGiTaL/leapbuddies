@@ -144,7 +144,7 @@
 
   function refreshLobby() {
     $('lobby-code').textContent = roomCode || '-----';
-    var link = location.origin + location.pathname + '?room=' + (roomCode || '');
+    var link = location.origin + location.pathname + '?room=' + (roomCode || '') + '&autojoin=1';
     $('invite-link').value = roomCode ? link : '';
     var ul = $('player-list');
     ul.innerHTML = '';
@@ -382,8 +382,12 @@
     var room = q.get('room');
     if (room) {
       $('join-code').value = room.toUpperCase();
-      setStatus('menu-status', 'You were invited to room ' + room.toUpperCase() + ' — pick your character, then Join Room.');
-      if (q.get('autojoin') === '1') joinRoom(room);
+      if (q.get('autojoin') === '1') {
+        setStatus('menu-status', 'Joining room ' + room.toUpperCase() + '…');
+        joinRoom(room);
+      } else {
+        setStatus('menu-status', 'You were invited to room ' + room.toUpperCase() + ' — pick your character, then Join Room.');
+      }
     }
   })();
 
