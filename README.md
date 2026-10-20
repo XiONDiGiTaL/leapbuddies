@@ -32,14 +32,14 @@ back. Both players standing on the two floor switches opens the gate.
 ## How it works
 
 - Vanilla JavaScript + Canvas, fixed-timestep 60 fps simulation
-  (`js/engine.js`, no build step, no dependencies besides the PeerJS
-  client loaded from CDN).
+  (`js/engine.js`, no build step, the Supabase client loaded
+  from CDN (used only as a message relay)).
 - Online play is host-authoritative: the host runs the simulation and
   streams compact state snapshots (~20/s); the guest sends inputs and
-  renders the host's state with interpolation. Signaling uses the
-  public PeerJS cloud broker; game traffic is a direct encrypted
-  WebRTC data connection between the two browsers. No server, no
-  database, nothing is collected or stored.
+  renders the host's state with interpolation. Both browsers connect over secure WebSocket
+  to a realtime relay channel named by the room code; the relay only
+  forwards messages between the two browsers in the room. No database,
+  nothing is collected or stored.
 - All art is original and drawn in code (`js/sprites.js`); all sound is
   synthesized with WebAudio (`js/audio.js`). There are no image or
   audio asset files.
@@ -52,9 +52,21 @@ style.css         retro lobby/HUD styling
 js/engine.js      game simulation (also runs headless in Node)
 js/sprites.js     original pixel art + procedural tiles/scenery
 js/audio.js       WebAudio synth SFX + a small original music loop
-js/net.js         PeerJS wrapper (host/join, room codes)
+js/net.js         relay transport (host/join, room codes)
 js/main.js        UI, game loop, rendering, netplay glue
+tests/            Node smoke test + two-browser end-to-end test
 ```
+
+## Tests
+
+```
+node tests/smoke-node.js     # engine logic, headless
+node tests/cdp-test.mjs      # real Chromium: local 2P + online both ways
+```
+
+The browser test's header explains its sandbox adaptations (local
+PeerServer + `file://` pages); the application code paths under test
+are the production ones.
 
 ## Deployment
 
