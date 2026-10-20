@@ -315,9 +315,15 @@
     guestLobby.assigned = otherColor(myPick); // provisional until host assigns
     setStatus('menu-status', 'Joining room ' + code + '…');
     var opened = false;
+    var joinTimer = setTimeout(function () {
+      if (!opened && role === 'guest') {
+        setStatus('menu-status', 'Still trying to reach the host… If this stays stuck, the connection is being blocked — try reloading both tabs, or a different browser/network.', true);
+      }
+    }, 15000);
     net = Net.join(code, {
       onOpen: function () {
         opened = true;
+        clearTimeout(joinTimer);
         net.send({ t: 'hello', pick: myPick });
         show('lobby'); refreshLobby();
       },
