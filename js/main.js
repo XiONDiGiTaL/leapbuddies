@@ -5,7 +5,7 @@
  * drawing lives in render3d.js. */
 (function () {
   'use strict';
-  var E = window.Engine, Net = window.Net, Sfx = window.Sfx, R = window.Render3D;
+  var E = window.Engine, Net = window.Net, Sfx = window.Sfx, R = window.Render3D, Coach = window.Coach;
   var Best = window.Best;                 // local bests (js/progress.js)
   var I18n = window.I18n;                 // EN/TR strings (js/i18n.js)
   var TILE = E.TILE;
@@ -340,6 +340,7 @@
     if (!renderer) { setStatus('menu-status', T('menu.3dFail'), true); return; }
     finishShown = false;
     setPaused(false);
+    if (Coach) Coach.hide();
     hideOverlay();
     role = role || 'solo';
     state = E.createGame({
@@ -366,6 +367,7 @@
   function stopGameToMenu() {
     running = false;
     setPaused(false);
+    if (Coach) Coach.hide();
     Sfx.stopMusic();
     if (net) { net.close(); net = null; }
     role = null; roomCode = null; state = null; mirror = null;
@@ -779,6 +781,7 @@
     if (paused) {
       renderer.draw(state, { dt: 0, mine: mySlot() });
       updateHud(state);
+      if (Coach) Coach.hide();
       return;
     }
 
@@ -796,6 +799,7 @@
     }
     renderer.draw(state, { dt: dt, mine: mySlot() });
     updateHud(state);
+    paintCoach(state);
   }
 
   function guestFrame(ts, dt) {
@@ -810,6 +814,7 @@
     if (paused) {
       renderer.draw(mirror, { dt: 0, mine: mySlot() });
       updateHud(mirror);
+      if (Coach) Coach.hide();
       return;
     }
 
@@ -855,6 +860,7 @@
   }
 
   function drainEvents(st) {
+    if (Coach) Coach.events(st.events);
     for (var i = 0; i < st.events.length; i++) {
       var e = st.events[i];
       if (e === 'break') Sfx.play('brk');
@@ -862,6 +868,15 @@
       else Sfx.play(e);
     }
     st.events.length = 0;
+  }
+
+  /* first-run tips: anchored to the critter, shell or plate they describe */
+  function paintCoach(st) {
+    if (!Coach) return;
+    Coach.update({
+      st: st, role: role, running: running, paused: paused,
+      project: renderer && renderer.project ? renderer.project : null
+    });
   }
 
   function paintHearts(el, p) {
@@ -916,6 +931,8 @@
     togglePause: togglePause,
     openGuide: openGuide,
     closeGuide: closeGuide,
+    coachSeen: function () { return Coach ? Coach.seen() : []; },
+    resetCoach: function () { if (Coach) { Coach.reset(); Coach.hide(); } },
     setStage: function (id) { myStage = id; paintStage(); if (role === 'host') broadcastLobby(); },
     startSolo: function () { role = 'solo'; startGame(); },
     startLocal: function () { role = 'local'; startGame(); },
@@ -928,6 +945,7 @@
       window.dispatchEvent(new KeyboardEvent(t, { code: code }));
     },
     stats: function () { return renderer ? renderer.stats() : null; },
+    project: function (x, y) { return renderer && renderer.project ? renderer.project(x, y) : null; },
     dbg: function () { return renderer ? renderer._dbg : null; },
     /* draw one frame with a chosen delta; used by automated checks when the
      * browser throttles requestAnimationFrame (hidden or occluded tab) */
@@ -956,6 +974,8 @@
   if (!renderer) {
     setStatus('menu-status', T('menu.3dFail'), true);
   }
+
+  if (Coach) Coach.init(document);
 
   /* language first so every later repaint uses the chosen one */
   if (I18n) I18n.apply();

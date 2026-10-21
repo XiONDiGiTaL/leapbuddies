@@ -3,6 +3,7 @@
  */
 'use strict';
 var E = require('../js/engine.js');
+var Coach = require('../js/coach.js');
 var TILE = E.TILE;
 var fails = 0, checks = 0;
 
@@ -191,6 +192,77 @@ var d2 = E.createGame({ mode: 'guest', twoPlayer: true, stage: 'tampa' });
 stepN(d1, 400); stepN(d2, 400);
 ok('two identical runs produce identical pedestrians',
   JSON.stringify(E.makeSnapshot(d1).enemies) === JSON.stringify(E.makeSnapshot(d2).enemies));
+
+/* ---- first-run coach marks ---- */
+/* The tips are a pure decision over a plain state, so they can be driven here
+ * without a DOM or a browser. */
+function coachState(extra) {
+  var s = {
+    players: [{ x: 100, y: 200, w: 12, h: 22, state: 'play', absent: false }],
+    enemies: [],
+    switches: [{ tx: 63, ty: 14, pressed: false }, { tx: 66, ty: 14, pressed: false }],
+    gateLatched: false, gateOpen: 0
+  };
+  Object.keys(extra || {}).forEach(function (k) { s[k] = extra[k]; });
+  return s;
+}
+Coach.reset();
+var quiet = coachState();
+ok('a quiet stretch of stage shows no tip', Coach.choose(quiet, 'solo') === null);
+var walkerAt = coachState({ enemies: [{ x: 140, y: 210, w: 13, h: 18, state: 'walk', dead: false }] });
+var tip1 = Coach.choose(walkerAt, 'solo');
+ok('a walker in reach gets the stomp tip, pinned to the critter',
+  tip1 && tip1.id === 'stomp' && Math.abs(tip1.x - 146.5) < 0.01, tip1);
+Coach.events(['stomp']);
+ok('stomping once retires the stomp tip for good',
+  Coach.isSeen('stomp') && Coach.choose(walkerAt, 'solo') === null);
+var shellAt = coachState({ enemies: [
+  { x: 145, y: 210, w: 13, h: 18, state: 'walk', dead: false },
+  { x: 160, y: 218, w: 13, h: 12, state: 'shell', dead: false }
+] });
+var tip2 = Coach.choose(shellAt, 'solo');
+ok('a loose shell outranks a walker and asks for the kick',
+  tip2 && tip2.id === 'kick' && Math.abs(tip2.x - 166.5) < 0.01, tip2);
+ok('a guest never gets local coach marks', Coach.choose(shellAt, 'guest') === null);
+
+/* the gate lesson waits for the gate zone and then retires when it opens */
+var atGate = coachState({ players: [{ x: 62 * TILE, y: 200, w: 12, h: 22, state: 'play', absent: false }] });
+var tip3 = Coach.choose(atGate, 'solo');
+ok('walking up to the gate teaches the plates',
+  tip3 && tip3.id === 'plates' && Math.abs(tip3.x - (63 * TILE + 8)) < 0.01, tip3);
+atGate.switches[0].pressed = true;
+var tip4 = Coach.choose(atGate, 'solo');
+ok('with one plate down it points at the other one',
+  tip4 && Math.abs(tip4.x - (66 * TILE + 8)) < 0.01, tip4);
+atGate.gateLatched = true;
+ok('an open gate ends the plate lesson', !Coach.choose(atGate, 'solo'));
+
+/* a real stage has to produce a usable tip without any test scaffolding */
+Coach.reset();
+var coachRun = game();
+var found = null;
+for (var ci = 0; ci < 400 && !found; ci++) {
+  E.step(coachRun, [E.EMPTY_INPUT, E.EMPTY_INPUT]);
+  found = Coach.choose(coachRun, 'solo');
+}
+ok('the opening of a real stage raises the stomp tip', found && found.id === 'stomp', found);
+ok('the tip lands on a tile inside the level', found && found.x > 0 && found.x < coachRun.levelW * TILE);
+
+/* a remembered lesson survives a reload (a fake store stands in for the browser) */
+var mem = {};
+global.localStorage = {
+  getItem: function (k) { return Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : null; },
+  setItem: function (k, v) { mem[k] = String(v); },
+  removeItem: function (k) { delete mem[k]; }
+};
+delete require.cache[require.resolve('../js/coach.js')];
+var CoachA = require('../js/coach.js');
+CoachA.mark('kick');
+delete require.cache[require.resolve('../js/coach.js')];
+var CoachB = require('../js/coach.js');
+ok('a finished lesson stays finished after a reload',
+  CoachB.isSeen('kick') && !CoachB.isSeen('stomp') && mem[CoachB.KEY] === '["kick"]', mem);
+delete global.localStorage;
 
 /* ---- run / skid / jump basics ---- */
 var st = game();

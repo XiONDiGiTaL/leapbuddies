@@ -1394,9 +1394,22 @@
       renderer.render(scene, camera);
     }
 
+    /* world coordinates (x, and y with the simulation's screen-down axis) to stage pixels, so UI can be
+     * pinned to a critter or a plate instead of to a guessed position. Uses
+     * the camera's own matrices, so zoom and the split-pair framing hold. */
+    function project(x, y) {
+      if (!canvas) return null;
+      var v = new THREE.Vector3(x, -y, 24).project(camera);
+      return {
+        x: (v.x * 0.5 + 0.5) * canvas.clientWidth,
+        y: (-v.y * 0.5 + 0.5) * canvas.clientHeight
+      };
+    }
+
     return {
       draw: draw,
       resize: resize,
+      project: project,
       renderer: renderer,
       _dbg: {
         scene: scene, camera: camera, chars: chars, flags: flags, renderer: renderer,

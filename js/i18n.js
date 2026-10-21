@@ -154,6 +154,10 @@
       'guide.tipGate': 'Both floor plates open the gate — stand on one each, or press them in turn.',
       'guide.tipPause': 'Esc or P pauses. M mutes. On a phone the touch pad sits under the stage.',
 
+      'coach.stomp': 'Jump on its head to flatten it',
+      'coach.kick': 'Touch the shell to kick it',
+      'coach.plates': 'Stand on both plates to open the gate',
+
       'mode.solo': 'Solo',
       'mode.local': 'Local 2P',
       'mode.online': 'Online co-op',
@@ -328,6 +332,10 @@
       'guide.tipStomp': 'Bir yaratığı yenmek için kafasına zıpla. Yandan dokunursan bir yıldız kaybedersin.',
       'guide.tipGate': 'İki yer düğmesi kapıyı açar — birer birer bas ya da sırayla.',
       'guide.tipPause': 'Esc veya P duraklatır. M sesi kapatır. Telefonda dokunmatik tuşlar sahnenin altındadır.',
+
+      'coach.stomp': 'Kafasına zıplayıp ez',
+      'coach.kick': 'Kabuğa dokunup tekmele',
+      'coach.plates': 'Kapıyı açmak için iki düğmeye de bas',
 
       'mode.solo': 'Tek kişilik',
       'mode.local': 'Yerel 2 oyuncu',

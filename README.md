@@ -48,6 +48,20 @@ stars and lives, co-op bubbles, every food pickup and every pedestrian, each
 next to a small render of the actual voxel model. It is the reference to
 open before a first run and the reminder to open mid-couch-argument.
 
+### First-run tips
+
+The first solo or couch run also coaches in place. Three short tips appear
+*inside the stage*, pinned above the thing they are about with a little
+arrow — **jump on that critter**, **touch that shell**, **stand on both
+plates** — and each one retires for good the moment you actually do it.
+They are the rules nobody guesses from a screenshot: the guide can explain
+them, but only the stage can point at one and say *this one*. Nothing is
+modal, nothing pauses the game, and the tips never appear for a guest in
+an online room. They live in `localStorage` under `leapbuddies.coach.v1`,
+so a second visit is a plain game with no hand-holding.
+
+![A first-run tip pinned above a dondurma seller: jump on its head to flatten it](shots/coach-stomp.png)
+
 ### Language, sound, touch
 
 - **English / Türkçe** — the switch sits at the top right of the main menu.
@@ -347,6 +361,7 @@ js/audio.js           WebAudio effects and the four stage loops
 js/net.js             relay transport: room codes, host/join
 js/progress.js        local best scores and best times, per stage and mode
 js/i18n.js            every player-facing string, English and Turkish
+js/coach.js           first-run tips, anchored inside the stage
 js/main.js            UI, lobby, fixed-timestep loop, netplay glue
 tests/smoke-node.js   headless mechanics, lives and netcode checks
 ```
@@ -369,7 +384,7 @@ needs an `https://` or `localhost` origin for the WebSocket and clipboard.
 node tests/smoke-node.js
 ```
 
-183 headless checks: level data, movement, gate (solo and two-plate forms),
+194 headless checks: level data, movement, gate (solo and two-plate forms),
 head bounce, jars, checkpoints, goal, the full lives model (solo deaths,
 three-strike game over, co-op bubbles, partner-down team wipes, timeout,
 respawn stars, death pop placement), the camera split and catch-up
@@ -410,7 +425,12 @@ shuffles slower than everyone else, and no quirk ever drops a pedestrian out
 of the level. It also pins the fairness rule (no quirk speed reaches 1.7),
 drives the retiree's turn and its cooldown with a buddy planted in his face,
 checks the quirk pose survives a snapshot round trip to a guest, and confirms
-two identical runs stay identical tick for tick.
+two identical runs stay identical tick for tick. The coach pass drives the
+tip chooser against a plain state: a quiet stretch stays quiet, a walker in
+reach gets the stomp tip pinned to its own position, a loose shell outranks a
+walker, a guest gets nothing, the gate lesson points at the first unpressed
+plate and then at the second, an open gate ends it, a real stage raises a
+tip without any scaffolding, and a finished lesson survives a reload.
 
 Rendering, the how-to-play keycaps, the field-guide icons, local 2P and
 online co-op are verified in a browser: two tabs, invite link, ready, start, guest input, carry
@@ -448,7 +468,7 @@ immediately gets `xiondigital.net/<repo-name>/` — no per-repo DNS work.
 To publish a new build:
 
 1. Bump the `?v=` query on the stylesheet and every script in
-   [index.html](index.html) (`?v=42` today). GitHub Pages caches files for
+   [index.html](index.html) (`?v=43` today). GitHub Pages caches files for
    minutes; a version bump is what makes a release land immediately in
    browsers that already have the old files.
 2. `git push` to `main`. Pages rebuilds automatically; the deployment
