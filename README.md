@@ -384,7 +384,7 @@ needs an `https://` or `localhost` origin for the WebSocket and clipboard.
 node tests/smoke-node.js
 ```
 
-194 headless checks: level data, movement, gate (solo and two-plate forms),
+200 headless checks: level data, movement, gate (solo and two-plate forms),
 head bounce, jars, checkpoints, goal, the full lives model (solo deaths,
 three-strike game over, co-op bubbles, partner-down team wipes, timeout,
 respawn stars, death pop placement), the camera split and catch-up
@@ -430,7 +430,12 @@ tip chooser against a plain state: a quiet stretch stays quiet, a walker in
 reach gets the stomp tip pinned to its own position, a loose shell outranks a
 walker, a guest gets nothing, the gate lesson points at the first unpressed
 plate and then at the second, an open gate ends it, a real stage raises a
-tip without any scaffolding, and a finished lesson survives a reload.
+tip without any scaffolding, and a finished lesson survives a reload. It
+also guards the wiring the browser cannot easily prove in CI: the loop hands
+its events to the coach, a live run keeps the chip painted, every exit path
+clears it, the renderer still exposes the projection the chip is pinned
+with, the element sits inside the stage and loads before the UI, and all
+three lessons exist in both languages.
 
 Rendering, the how-to-play keycaps, the field-guide icons, local 2P and
 online co-op are verified in a browser: two tabs, invite link, ready, start, guest input, carry

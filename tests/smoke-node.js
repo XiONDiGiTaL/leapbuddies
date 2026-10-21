@@ -753,6 +753,21 @@ ok('english fallback for an unknown key', I18n.t('no.such.key') === 'no.such.key
 I18n.setLang('en');
 ok('switching back restores English', I18n.t('ctrl.jump') === 'Jump' && I18n.lang === 'en');
 
+/* ---- the coach has to be plugged into the real loop, not just exist ---- */
+var renderSrcTop = fs.readFileSync(path.join(__dirname, '..', 'js', 'render3d.js'), 'utf8');
+ok('the game loop hands its events to the coach', /Coach\.events\(st\.events\)/.test(mainSrc));
+ok('a live run keeps painting the coach', /paintCoach\(state\)/.test(mainSrc) && /Coach\.update\(/.test(mainSrc));
+ok('the coach is cleared when a run is not on screen', (mainSrc.match(/Coach\.hide\(\)/g) || []).length >= 3,
+  (mainSrc.match(/Coach\.hide\(\)/g) || []).length);
+ok('the renderer exposes the projection a tip is pinned with', /project: project/.test(renderSrcTop));
+ok('the coach element lives inside the stage and loads before the UI',
+  html.indexOf('id="coach-tip"') > html.indexOf('id="stage"') &&
+  html.indexOf('js/coach.js') > 0 && html.indexOf('js/coach.js') < html.indexOf('js/main.js'));
+ok('every coach lesson has both languages',
+  ['stomp', 'kick', 'plates'].every(function (id) {
+    return typeof en['coach.' + id] === 'string' && typeof tr['coach.' + id] === 'string';
+  }));
+
 /* ---- volume: one master level for effects and music ---- */
 require('../js/audio.js');
 var Sfx = global.Sfx;
