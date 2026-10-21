@@ -43,12 +43,19 @@ A gamepad works for Player 1. **M** mutes. The menu has a permanent
 on top, so someone who has never played a platformer can match the letters
 on their own keyboard at a glance.
 
+The menu also carries a **Field Guide** button: a single sheet that explains
+stars and lives, co-op bubbles, every food pickup and every pedestrian, each
+next to a small render of the actual voxel model. It is the reference to
+open before a first run and the reminder to open mid-couch-argument.
+
 ### Language, sound, touch
 
 - **English / Türkçe** — the switch sits at the top right of the main menu.
   It translates every string in the game — menu, lobby, HUD, how-to-play,
-  status lines and the end-of-run summary — and remembers the choice, so a
-  Turkish browser opens in Turkish the first time.
+  status lines, the field guide, the pause card and the end-of-run summary —
+  and remembers the choice, so a Turkish browser opens in Turkish the first
+  time. `node tests/smoke-node.js` fails if the two tables ever drift apart
+  or if a `data-i18n` hook in the page has no Turkish string.
 - **Volume** — a slider next to the sound button in the game HUD, wired to
   the master level of the synth, so effects and music move together. Both
   the slider and the mute state are remembered.
@@ -86,10 +93,17 @@ on their own keyboard at a glance.
 
 ## How a run works
 
-- **Three lives.** Deaths and game overs are the only things that end a run.
-- **Hearts** are how many hits you can take: one by default, two while a
-  hazelnut-spread jar is active. A hit on two hearts just shrinks you and
-  grants a moment of flashing invulnerability; a hit on one heart is a down.
+- **Three lives and three stars.** Lives are the run; stars are the
+  health bar. Every buddy starts a life with three stars and a hit costs
+  one, plus a short flashing grace period where nothing can touch them.
+  Losing the last star is a down. The bar refills at every checkpoint
+  respawn.
+- **Street food.** Lahmacun refills all three stars, baklava restores one,
+  ayran grants an extra life, and sujuk is the star power-up: ten seconds
+  of gold flashing invulnerability where touching a critter knocks it out
+  instantly. The four pickups are hand-placed per stage and the engine keeps
+  them apart — two snacks never share a pocket, and none hovers inside a
+  critter.
 - **Losing a life pops the character out of view** — a quick hop, a spin
   and a puff of voxel bits at the spot where they last stood — then they
   return at the checkpoint. A pit fall pops at the ledge rather than
@@ -106,7 +120,7 @@ on their own keyboard at a glance.
   partner instead of being stranded off-screen or dragging the camera onto
   the player in front.
 - **Bananas and jars.** Bananas are scattered through every stage; gold
-  blocks pay out when bumped from below; jars grant the second heart.
+  blocks pay out when bumped from below; a jar is a short star shield.
 - **Critters.** Each city walks its own cast — dondurma sellers, hoodlums,
   moustachioed uncles, grumpy retirees — mixed in with the plain walker.
   All of them are stompable. A sheller curls into a low shell
@@ -119,6 +133,15 @@ on their own keyboard at a glance.
 - **Checkpoint and goal.** Touching the midpoint flag moves your respawn
   point. Reaching the gold flag clears the stage.
 - **Timer.** Five minutes per stage. Running out costs a life.
+- **Pause.** **Esc** or **P**, or the Pause button in the HUD, freezes the
+  simulation (not just the drawing). Online the host owns the pause so both
+  screens stop together.
+- **Field guide.** The main menu has a **Field Guide** button with a card
+  for every rule, every snack and every neighbour. Each card carries a live
+  render of the actual voxel model — the three stars, the bubble, the
+  checkpoint flag, all four foods and each stage's pedestrians — drawn by
+  the same code that draws the stage, so the picture always matches what
+  you meet in the level.
 - **Readable at any size.** The camera zooms in on small screens until a
   buddy is at least 26 screen pixels tall, then pulls back out far enough
   that a co-op partner stays in the frame — see
@@ -235,10 +258,13 @@ one lead line, one bass line and a three-piece drum kit per stage, at most
   builds in code goes through `I18n.t()`. The chosen language is stored in
   `localStorage` and applied to `<html lang>`, the page title and the meta
   description as well.
-- **Keycaps** — the caps are real 3D boxes rendered into small canvases,
-  but the legend is a texture on the cap face rather than voxel letters:
-  at 50 px a letter built from cubes turned into a grey blur, which is
-  exactly what a new player cannot read.
+- **Keycaps and guide icons** — the caps are real 3D boxes rendered into
+  small canvases, but the legend is a texture on the cap face rather than
+  voxel letters: at 50 px a letter built from cubes turned into a grey
+  blur, which is exactly what a new player cannot read. The field-guide
+  cards reuse the same off-screen renderer: each icon builds the stage's
+  own model (food geometry, an enemy skin, a checkpoint flag) and frames it
+  by its bounding box, so the pictures are never hand-drawn approximations.
 - **Netcode** — [js/net.js](js/net.js) uses Supabase Realtime broadcast
   channels purely as a message relay: the two browsers each open one
   outbound WebSocket, so there is no peer negotiation, no ICE and nothing
@@ -324,37 +350,43 @@ needs an `https://` or `localhost` origin for the WebSocket and clipboard.
 node tests/smoke-node.js
 ```
 
-125 headless checks: level data, movement, gate (solo and two-plate forms),
+170 headless checks: level data, movement, gate (solo and two-plate forms),
 head bounce, jars, checkpoints, goal, the full lives model (solo deaths,
 three-strike game over, co-op bubbles, partner-down team wipes, timeout,
-respawn hearts, death pop placement), the camera split and catch-up
+respawn stars, death pop placement), the camera split and catch-up
 bubble, snapshot round trips, the abusive-input fuzz run, the four stage
 layouts and casts, the run clock, the local records (first clear, weaker runs,
 score-only game overs, separate rows per stage and mode, fastest-clears-only
 times, and the storage key), the translation tables (every English key has a
-Turkish one, and every `data-i18n` hook in the page and every `T()` key used
-by the UI resolves), the volume range, and the camera framing (desktop stays
+Turkish one, no Turkish string is blank, the Turkish table really is
+translated rather than copied, and every `data-i18n` hook in the page and
+every `T()` key used by the UI resolves in both languages), the guide art
+hooks (each of the twelve `data-art` canvases has a voxel model behind it),
+the volume range, and the camera framing (desktop stays
 at zoom 1, a phone zooms in until the buddy is 26 px tall, a split pair stays
 whole in frame, the frame never leaves the level, and `zoom: false` restores
-the fixed view). The stage pass checks that all four layouts are 200 × 18,
+the fixed view). The stage pass checks that all four layouts are 300 × 18,
 differ from each other, keep the plates, gate, midpoint and goal anchors,
-carry 50–85 bananas and 8–12 critters, that every map mixes its themed
+carry 100–170 bananas and 20–30 critters, that every map mixes its themed
 critter with the plain walker and the sheller, that the gate tiles really
-block the walkway, that no moving platform sweeps through terrain, and —
+block the walkway, that no moving platform sweeps through terrain, that the
+four foods survive the spacing pass with no two in one pocket and none
+inside a critter, and —
 most importantly — that a jump-aware flood fill can walk from the spawn to
 the goal plateau on every one of the four maps (4 tiles up, 6 across, 7
 down, platforms counted along their whole travel). A host and a guest are
 also built on each stage to confirm both ends get the same critter list
 for the snapshot stream. The critter pass covers
 spawns (nothing starts inside terrain on any stage, the İstanbul terrace
-pair stands on the terrace), a fifteen-second patrol with no critter ending
+pair stands on the terrace), food and critter height against a buddy, a
+fifteen-second patrol with no critter ending
 up buried or outside the level, recovery when one is shoved into the ground,
 that a stomped pedestrian dies instead of shelling, and the stomp → shell →
 slide cycle (the shell keeps its low body when kicked, bounces off walls
 instead of disappearing, and wakes back up).
 
-Rendering, the how-to-play keycaps, local 2P and online co-op are verified
-in a browser: two tabs, invite link, ready, start, guest input, carry
+Rendering, the how-to-play keycaps, the field-guide icons, local 2P and
+online co-op are verified in a browser: two tabs, invite link, ready, start, guest input, carry
 bubble, game over, restart, disconnect. The summary card is checked at
 desktop, tablet and phone widths, and its records are checked across a
 reload, a weaker retry, a stage clear, and switching stage and mode. Both
@@ -389,7 +421,7 @@ immediately gets `xiondigital.net/<repo-name>/` — no per-repo DNS work.
 To publish a new build:
 
 1. Bump the `?v=` query on the stylesheet and every script in
-   [index.html](index.html) (`?v=32` today). GitHub Pages caches files for
+   [index.html](index.html) (`?v=40` today). GitHub Pages caches files for
    minutes; a version bump is what makes a release land immediately in
    browsers that already have the old files.
 2. `git push` to `main`. Pages rebuilds automatically; the deployment

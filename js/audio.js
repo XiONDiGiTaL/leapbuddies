@@ -82,7 +82,10 @@
     land:   function () { tone(120, 80, 0.05, 'triangle', 0.04); },
     lifeloss: function () { [392, 330, 262].forEach(function (f, i) { tone(f, f, 0.16, 'square', 0.07, i * 0.12); }); },
     gameover: function () { [392, 311, 262, 196].forEach(function (f, i) { tone(f, f * 0.98, 0.3, 'triangle', 0.09, i * 0.2); }); },
-    timeout:function () { [440, 440, 440].forEach(function (f, i) { tone(f, f, 0.14, 'square', 0.07, i * 0.16); }); }
+    timeout:function () { [440, 440, 440].forEach(function (f, i) { tone(f, f, 0.14, 'square', 0.07, i * 0.16); }); },
+    hurt:   function () { tone(330, 110, 0.16, 'square', 0.09); },
+    food:   function () { [660, 880, 1180].forEach(function (f, i) { tone(f, f, 0.09, 'triangle', 0.08, i * 0.05); }); },
+    starhit:function () { tone(1040, 180, 0.1, 'square', 0.07); }
   };
 
   /* ---------------- stage loops (32 steps each) ----------------

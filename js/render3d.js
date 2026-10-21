@@ -449,6 +449,29 @@
     marker.visible = false;
     root.add(marker);
 
+    /* Sujuk power: a ring of little gold cubes orbits the buddy while the
+     * star is running, so the flashing body never has to carry the read on
+     * its own. */
+    var aura = new THREE.Group();
+    /* a soft gold disc behind the body, then orbiting sparks in front */
+    var halo = new THREE.Mesh(
+      new THREE.CircleGeometry(19, 20),
+      new THREE.MeshBasicMaterial({ color: 0xffd94a, transparent: true, opacity: 0.32, depthWrite: false })
+    );
+    halo.position.set(0, 11, -9);
+    aura.add(halo);
+    for (var ai = 0; ai < 6; ai++) {
+      var spark = new THREE.Mesh(
+        new THREE.BoxGeometry(3.4, 3.4, 3.4),
+        new THREE.MeshBasicMaterial({ color: ai % 2 ? 0xfff0a0 : 0xffc23a })
+      );
+      var aa = ai * 1.0472;
+      spark.userData.ang = aa;
+      aura.add(spark);
+    }
+    aura.visible = false;
+    root.add(aura);
+
     /* A puff of voxel bits for the death pop. It lives in world space (not
      * inside root) so the shrinking, spinning body doesn't drag it around. */
     var puff = new THREE.Group();
@@ -473,7 +496,7 @@
     puff.visible = false;
 
     return {
-      root: root, holder: holder, head: headMesh, bubble: bubble, marker: marker, shadow: shadow,
+      root: root, holder: holder, head: headMesh, bubble: bubble, marker: marker, shadow: shadow, aura: aura,
       armL: armL, armR: armR, legL: legL, legR: legR,
       puff: puff, puffBits: puffBits, koT: 0,
       phase: 0, yaw: 0.52, scale: 1, color: color
@@ -552,6 +575,23 @@
     g.visible = !p.absent;
     if (p.invuln > 0 && p.state === 'play') {
       g.visible = ((time * 20) | 0) % 8 < 5;
+    }
+    var starOn = (p.star || 0) > 0 && p.state === 'play';
+    c.aura.visible = starOn;
+    if (starOn) {
+      /* fast flicker + an orbiting gold ring = unmistakable star power */
+      g.visible = ((time * 26) | 0) % 5 < 4;
+      for (var si = 0; si < c.aura.children.length; si++) {
+        var sp = c.aura.children[si];
+        if (!sp.userData || sp.userData.ang == null) {
+          sp.position.set(0, 11, -9);
+          sp.rotation.z += dt * 1.4;
+          continue;
+        }
+        var ang = sp.userData.ang + time * 3.2;
+        sp.position.set(Math.cos(ang) * 15, 11 + Math.sin(ang * 2 + time * 4) * 7, 12 + Math.sin(ang) * 6);
+        sp.rotation.y += dt * 5;
+      }
     }
     c.bubble.visible = p.state === 'bubble';
     c.bubble.rotation.y += dt * 0.7;
@@ -647,6 +687,10 @@
           [3.6, 1.1, 0, 4, 2.2, 5, 0x7d3a28]
         ]
     );
+    /* the mesh was built around a 14px critter; buddies are 22px, so scale
+     * pedestrians up to the new people-sized hitbox (20px) and the plain
+     * critters to 18px */
+    body.scale.setScalar(skin ? 1.45 : 1.3);
     root.add(body);
     root.userData.critter = skin || type;
     /* a geometry (not a mesh) so it can be swapped onto the body mesh.
@@ -735,6 +779,69 @@
 
     return mergeParts(parts);
   }
+
+  /* ---- the four voxel foods ----------------------------------------
+   * All four are built around the origin and spin on the spot, so they have
+   * to read from every angle: a wide flat lahmacun with a lemon wedge and
+   * tomato, a layered baklava diamond with green pistachio, a ribbed glass
+   * of ayran with a mint sprig, and the dark red sujuk ring. */
+  function lahmacunGeometry() {
+    /* upright, like a plate held up to the camera: a flat disc built in the
+     * XY plane reads as a round flatbread from the side view, while a
+     * horizontal one would disappear to a one-pixel line whenever it spun */
+    return mergeParts([
+      [0, 0, 0, 18, 13, 1.8, 0xe6b06a],
+      [0, 0, 0.9, 15.4, 11, 0.8, 0xb8432a],
+      [0, 0, 1.4, 10, 7, 0.5, 0xa03520],
+      [-4.5, 3.2, 1.3, 2.6, 2, 0.5, 0x3f7d3a],
+      [4.2, -3.4, 1.3, 2.6, 2, 0.5, 0x3f7d3a],
+      [0.5, -4.4, 1.3, 2, 2, 0.5, 0x3f7d3a],
+      [6.4, 3.8, 1.5, 5, 4, 0.7, 0xffe066],
+      [6.4, 6.2, 1.5, 3, 1.7, 0.7, 0xf7d24a],
+      [-6.6, 2.2, 1.3, 3, 2, 0.7, 0xd94f3a]
+    ]);
+  }
+  function baklavaGeometry() {
+    return mergeParts([
+      [0, -3.4, 0, 14, 3, 10, 0xc98a34],
+      [0, -0.6, 0, 14, 2.6, 10, 0xe0a84a],
+      [0, 1.6, 0, 12, 1.4, 8, 0xe8bf6a],
+      [0, 2.8, 0, 10, 1.1, 7, 0x6fae4c],
+      [0, -4.8, 0, 12, 1, 8, 0xa86a24],
+      [-5, 0.6, 4, 3, 1, 2, 0xf0d08a],
+      [5, 0.6, -4, 3, 1, 2, 0xf0d08a],
+      [0, 3.7, 3, 6, 0.5, 3, 0x7dbb55]
+    ]);
+  }
+  function ayranGeometry() {
+    return mergeParts([
+      [0, -2, 0, 9, 12, 9, 0xf4f3ec],
+      [0, -8.2, 0, 9.6, 1.4, 9.6, 0xd9d7cd],
+      [0, 4.2, 0, 9.8, 1.6, 9.8, 0xfbfaf4],
+      [0, 5.6, 0, 9.0, 1.8, 9.0, 0xffffff],
+      [0, 6.6, 1.5, 4, 1.4, 4, 0x3f8b46],
+      [4.2, -4, 4.2, 1.2, 9, 1.2, 0xe6e4da],
+      [-4.2, -4, 4.2, 1.2, 9, 1.2, 0xe6e4da],
+      [4.2, -4, -4.2, 1.2, 9, 1.2, 0xe6e4da],
+      [-4.2, -4, -4.2, 1.2, 9, 1.2, 0xe6e4da]
+    ]);
+  }
+  function sujukGeometry() {
+    return mergeParts([
+      [-5.5, -1, 0, 4, 11, 4, 0x8e3327],
+      [5.5, -1, 0, 4, 11, 4, 0x8e3327],
+      [0, -6, 0, 15, 4, 4, 0x8e3327],
+      [0, 4.5, 0, 11, 3.2, 4, 0x7a2a20],
+      [-5.5, 1, 2, 1.5, 1.5, 1.5, 0xf0e2ce],
+      [5.5, -3, 2, 1.5, 1.5, 1.5, 0xf0e2ce],
+      [0, -6, 2, 2, 1.4, 1.4, 0xf0e2ce],
+      [0, 6.4, 0, 2.4, 2, 1.6, 0xe9dcc8]
+    ]);
+  }
+  var FOOD_GEOS = {
+    lahmacun: lahmacunGeometry, baklava: baklavaGeometry,
+    ayran: ayranGeometry, sujuk: sujukGeometry
+  };
 
   function switchGroup() {
     var g = new THREE.Group();
@@ -848,7 +955,7 @@
 
     var coinGeo = bananaGeometry();
     var coinMat = new THREE.MeshLambertMaterial({ vertexColors: true });
-    var coinMesh = new THREE.InstancedMesh(coinGeo, coinMat, 120);
+    var coinMesh = new THREE.InstancedMesh(coinGeo, coinMat, 220);
     coinMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     coinMesh.frustumCulled = false;
     scene.add(coinMesh);
@@ -858,6 +965,27 @@
     /* a touch over one tile so the label and lid stay readable at play size */
     jarMesh.scale.setScalar(1.3);
     scene.add(jarMesh);
+
+    /* one mesh per authored food pickup, geometry picked by its type */
+    var foodMeshes = [];
+    function ensureFoods(list) {
+      for (var i = 0; i < list.length; i++) {
+        var f = list[i];
+        var have = foodMeshes[i];
+        if (!have || have.userData.type !== f.type) {
+          if (have) scene.remove(have);
+          var mk = FOOD_GEOS[f.type] || FOOD_GEOS.baklava;
+          var m = new THREE.Mesh(mk(), VOXEL_MAT);
+          m.userData.type = f.type;
+          m.scale.setScalar(1.2);
+          scene.add(m);
+          foodMeshes[i] = m;
+          have = m;
+        }
+        have.visible = !f.taken;
+      }
+      for (var j = list.length; j < foodMeshes.length; j++) if (foodMeshes[j]) foodMeshes[j].visible = false;
+    }
 
     var platforms = [];
     for (var pi = 0; pi < 3; pi++) {
@@ -1155,7 +1283,9 @@
       // moving platforms
       for (var i = 0; i < st.platforms.length && i < platforms.length; i++) {
         var pl = st.platforms[i];
-        platforms[i].position.set(pl.x + pl.w / 2, -pl.y, 20);
+        /* the deck's top face is 1.9 units above the group origin, so drop
+         * the group to put the visible surface exactly under the feet */
+        platforms[i].position.set(pl.x + pl.w / 2, -pl.y + 1.9, 20);
       }
 
       // switches
@@ -1197,6 +1327,18 @@
         var jb = jars[0];
         jarMesh.position.set(jb.x + 7, -(jb.y + 9) + Math.sin(st.tick * 0.12) * 1.2, 22);
         jarMesh.rotation.y = st.tick * 0.05;
+      }
+
+      // food pickups
+      ensureFoods(st.foods || []);
+      for (var fi2 = 0; fi2 < foodMeshes.length; fi2++) {
+        var fm = foodMeshes[fi2], fd = st.foods[fi2];
+        if (!fm || !fd || fd.taken) continue;
+        fm.position.set(fd.x + 7, -(fd.y + 7) + Math.sin(st.tick * 0.11 + fi2) * 1.8, 23);
+        /* props sway instead of spinning: a spinning flatbread turns edge-on
+         * and disappears, and a food is not a coin anyway */
+        fm.rotation.y = Math.sin(st.tick * 0.035 + fi2) * 0.34;
+        fm.rotation.z = Math.sin(st.tick * 0.05 + fi2) * 0.08;
       }
 
       // enemies
@@ -1465,6 +1607,12 @@
       keyAcc = now;
       paintKeyCards(now);
     }
+    /* guide icons are static: each canvas paints once per size, and only
+     * while the sheet is actually on screen */
+    if (now - guideArtAcc > 120) {
+      guideArtAcc = now;
+      paintGuideArt(now);
+    }
   }
 
   function paintCharCards(now, cards) {
@@ -1504,11 +1652,177 @@
     }
   }
 
+  /* ------------------------------------------------------------------ */
+  /* Field-guide art: the same voxel models, rendered once into a icon    */
+  /* ------------------------------------------------------------------ */
+  /* A star drawn as a 9x9 pixel stamp, extruded: readable at 48 px and
+   * unmistakably the same gold the HUD uses. */
+  function starGeometry() {
+    var FLAG = [
+      '....#....',
+      '...###...',
+      '...###...',
+      '#########',
+      '.#######.',
+      '..#####..',
+      '..#####..',
+      '.##...##.',
+      '.#.....#.'
+    ];
+    var px = 2.2, parts = [];
+    for (var r = 0; r < FLAG.length; r++) {
+      for (var c = 0; c < FLAG[r].length; c++) {
+        if (FLAG[r].charAt(c) !== '#') continue;
+        var col = r < 2 ? 0xfff0b0 : r > 5 ? 0xd9a52e : 0xffd24a;
+        parts.push([(c - 4) * px, (4 - r) * px, 0, px * 1.04, px * 1.04, 3.6, col]);
+      }
+    }
+    return mergeParts(parts);
+  }
+
+  function starsArt() {
+    var g = new THREE.Group();
+    var geo = starGeometry();
+    var scales = [0.82, 1.05, 0.82];
+    for (var i = 0; i < 3; i++) {
+      var m = new THREE.Mesh(geo, VOXEL_MAT);
+      m.scale.setScalar(scales[i]);
+      m.position.set((i - 1) * 15, i === 1 ? 1.6 : -1.4, 0);
+      g.add(m);
+    }
+    return g;
+  }
+
+  /* checkpoint flag: the same pole-and-cloth the midpoint prints in world */
+  function flagArt() {
+    var g = new THREE.Group();
+    g.add(meshOf([
+      [0, 11, 0, 2.4, 22, 2.4, 0xd9c9a0],
+      [0, 0.8, 0, 12, 2.4, 12, 0x6f7a92],
+      [7.6, 18, 0, 13, 6, 1.8, 0xffd24a],
+      [7.6, 14.2, 0, 11, 3, 1.8, 0xffb84d]
+    ]));
+    return g;
+  }
+
+  /* the co-op bubble, with the same highlight cubes the stage uses */
+  function bubbleArt() {
+    var g = new THREE.Group();
+    var orb = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(12, 1),
+      new THREE.MeshLambertMaterial({ color: 0x9fdcff, transparent: true, opacity: 0.48, flatShading: true, emissive: 0x2f6f9c })
+    );
+    g.add(orb);
+    g.add(meshOf([[-5, 5.5, 9, 3.4, 3.4, 1.4, 0xffffff]]));
+    g.add(meshOf([[4, -1.5, 9.6, 2, 2, 1.4, 0xdff4ff]]));
+    return g;
+  }
+
+  function foodArt(type) {
+    return new THREE.Mesh(FOOD_GEOS[type](), VOXEL_MAT);
+  }
+
+  var GUIDE_ART = {
+    'stars': starsArt,
+    'flag': flagArt,
+    'bubble': bubbleArt,
+    'lahmacun': function () { return foodArt('lahmacun'); },
+    'baklava': function () { return foodArt('baklava'); },
+    'ayran': function () { return foodArt('ayran'); },
+    'sujuk': function () { return foodArt('sujuk'); },
+    'icecream': function () { return makeEnemy('walker', 'icecream').root; },
+    'uncle': function () { return makeEnemy('walker', 'uncle').root; },
+    'grump': function () { return makeEnemy('walker', 'grump').root; },
+    'hoodlum': function () { return makeEnemy('walker', 'hoodlum').root; },
+    'sheller': function () { return makeEnemy('sheller').root; }
+  };
+  var ART_SPIN = { 'stars': 0.16, 'flag': 0.5, 'bubble': 0.2 };
+
+  var guideArtScene = null, guideArtCam = null, guideArtCache = {};
+  var guideArtAcc = 0;
+
+  function initGuideArtScene() {
+    if (guideArtScene) return guideArtScene;
+    guideArtScene = new THREE.Scene();
+    guideArtCam = new THREE.PerspectiveCamera(30, 1, 0.1, 400);
+    guideArtScene.add(new THREE.HemisphereLight(0xffffff, 0x6a5a4a, 0.95));
+    var a1 = new THREE.DirectionalLight(0xfff4e2, 0.85);
+    a1.position.set(0.6, 1.1, 1.2);
+    guideArtScene.add(a1);
+    var a2 = new THREE.DirectionalLight(0xa9c8ff, 0.4);
+    a2.position.set(-1, 0.3, 0.6);
+    guideArtScene.add(a2);
+    return guideArtScene;
+  }
+
+  function paintGuideArt(now) {
+    if (typeof document === 'undefined') return 0;
+    var cards = document.querySelectorAll('.guide-art');
+    if (!cards.length) return 0;
+    var modal = document.getElementById('guide-modal');
+    if (modal && modal.classList.contains('hidden')) return 0;
+    var r = initPreview();
+    if (!r) return 0;
+    initGuideArtScene();
+    var painted = 0;
+    for (var i = 0; i < cards.length; i++) {
+      var cv = cards[i];
+      if (!cv.offsetParent) continue;
+      var id = cv.getAttribute('data-art');
+      var make = GUIDE_ART[id];
+      if (!make) continue;
+      var w = Math.max(24, cv.clientWidth || 48);
+      var h = Math.max(24, cv.clientHeight || 48);
+      var dpr = Math.min((global.devicePixelRatio || 1) * 2, 3);
+      var bw = Math.round(w * dpr), bh = Math.round(h * dpr);
+      var sig = id + '|' + bw + 'x' + bh;
+      if (cv.__artSig === sig) continue;
+      if (cv.width !== bw || cv.height !== bh) { cv.width = bw; cv.height = bh; }
+
+      var obj = guideArtCache[id];
+      if (!obj) { obj = make(); guideArtCache[id] = obj; }
+      obj.position.set(0, 0, 0);
+      obj.rotation.set(0, 0, 0);
+      var box = new THREE.Box3().setFromObject(obj);
+      var size = box.getSize(new THREE.Vector3());
+      var center = box.getCenter(new THREE.Vector3());
+      obj.position.set(-center.x, -center.y, -center.z);
+
+      var holder = new THREE.Group();
+      holder.add(obj);
+      holder.rotation.y = ART_SPIN[id] != null ? ART_SPIN[id] : 0.5;
+      guideArtScene.add(holder);
+
+      /* frame by the model, not by a guessed distance: tall pedestrians and
+       * the wide three-star row both fill their box without clipping */
+      var vFov = guideArtCam.fov * Math.PI / 180;
+      var distV = (size.y / 2) / Math.tan(vFov / 2);
+      var distH = (size.x / 2) / Math.tan(Math.atan(Math.tan(vFov / 2) * (w / h)));
+      var dist = Math.max(distV, distH, 12) * 1.28 + size.z;
+      guideArtCam.position.set(dist * 0.34, dist * 0.2, dist * 0.92);
+      guideArtCam.aspect = w / h;
+      guideArtCam.updateProjectionMatrix();
+      guideArtCam.lookAt(0, 0, 0);
+
+      r.setSize(bw, bh, false);
+      r.render(guideArtScene, guideArtCam);
+      guideArtScene.remove(holder);
+
+      var g2 = cv.getContext('2d');
+      g2.clearRect(0, 0, cv.width, cv.height);
+      g2.drawImage(previewCanvas, 0, 0);
+      cv.__artSig = sig;
+      painted++;
+    }
+    return painted;
+  }
+
   global.Render3D = {
     STAGES: STAGES.map(function (s) { return { id: s.id, name: s.name, tag: s.tag }; }),
     createRenderer: createRenderer,
     previewTick: previewTick,
     paintKeyCards: paintKeyCards,
+    paintGuideArt: paintGuideArt,
     hasThree: !!THREE
   };
 })(typeof window !== 'undefined' ? window : globalThis);

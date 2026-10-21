@@ -39,6 +39,7 @@
   var net = null;
   var roomCode = null;
   var finishShown = false;
+  var paused = false;
 
   var hostLobby = { guestIn: false, guestPick: null, guestAssigned: null, guestReady: false, myReady: false };
   var guestLobby = { hostPick: 'red', assigned: 'green', hostReady: false, myReady: false, started: false };
@@ -56,6 +57,8 @@
     if (view === 'game' && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].indexOf(e.code) >= 0) e.preventDefault();
     keys[e.code] = true;
     if (e.code === 'KeyM' && view === 'game') toggleMute();
+    if ((e.code === 'Escape' || e.code === 'KeyP') && view === 'game') togglePause();
+    if (e.code === 'Escape' && !$('guide-modal').classList.contains('hidden')) closeGuide();
     Sfx.unlock();
   });
   window.addEventListener('keyup', function (e) { keys[e.code] = false; });
@@ -284,10 +287,55 @@
     paintStage();
   }
 
+  /* ---------------- pause ---------------- */
+  /* Pause freezes the simulation, not just the drawing: the fixed-step
+   * accumulator is dropped so resuming never fast-forwards. Online, the
+   * host owns the pause and tells the guest, so both screens stop together. */
+  function setPaused(v) {
+    if (view !== 'game' || !running) v = false;
+    paused = !!v;
+    var card = $('pause-card');
+    if (card) card.classList.toggle('hidden', !paused);
+    var b = $('btn-pause');
+    if (b) {
+      b.textContent = T(paused ? 'hud.resume' : 'hud.pause');
+      b.setAttribute('aria-pressed', paused ? 'true' : 'false');
+    }
+    var sub = $('pause-sub');
+    if (sub) sub.textContent = T(paused && role === 'guest' ? 'pause.guest' : 'pause.sub');
+    last = 0;
+    if (!paused) lastSnapAt = Date.now();
+    if (role === 'host' && net) net.send({ t: 'pause', v: paused ? 1 : 0 });
+  }
+  function togglePause() {
+    if (view !== 'game' || !running) return;
+    if (role === 'guest') return;              // the host drives the pause
+    setPaused(!paused);
+  }
+  $('btn-pause').addEventListener('click', togglePause);
+  $('btn-resume').addEventListener('click', function () { setPaused(false); });
+  $('btn-pause-leave').addEventListener('click', stopGameToMenu);
+
+  /* ---------------- field guide ---------------- */
+  function openGuide() {
+    $('guide-modal').classList.remove('hidden');
+    $('btn-guide-close').focus();
+  }
+  function closeGuide() {
+    $('guide-modal').classList.add('hidden');
+    $('btn-guide').focus();
+  }
+  $('btn-guide').addEventListener('click', openGuide);
+  $('btn-guide-close').addEventListener('click', closeGuide);
+  $('guide-modal').addEventListener('click', function (e) {
+    if (e.target === this) closeGuide();
+  });
+
   /* ---------------- game lifecycle ---------------- */
   function startGame() {
     if (!renderer) { setStatus('menu-status', T('menu.3dFail'), true); return; }
     finishShown = false;
+    setPaused(false);
     hideOverlay();
     role = role || 'solo';
     state = E.createGame({
@@ -305,12 +353,15 @@
   }
   function paintHudMode() {
     $('hud-mode').textContent = role && I18n ? I18n.modeHud(role) : '';
+    /* only the host can pause an online run; a guest would freeze alone */
+    $('btn-pause').disabled = role === 'guest';
   }
   function updateHudStage() {
     $('hud-stage').textContent = stageName(myStage);
   }
   function stopGameToMenu() {
     running = false;
+    setPaused(false);
     Sfx.stopMusic();
     if (net) { net.close(); net = null; }
     role = null; roomCode = null; state = null; mirror = null;
@@ -411,7 +462,7 @@
     if (!Best) {
       return {
         bestScore: null, bestTimeMs: null, newScore: false, newTime: false,
-        modeName: role === 'solo' ? 'Solo' : role === 'local' ? 'Local 2P' : 'Online co-op',
+        modeName: I18n ? I18n.modeName(role) : (role === 'solo' ? 'Solo' : role === 'local' ? 'Local 2P' : 'Online co-op'),
         elapsedMs: elapsedMs
       };
     }
@@ -431,6 +482,10 @@
     paintHudMode();
     updateHudStage();
     paintSound();
+    var pb = $('btn-pause');
+    if (pb) pb.textContent = T(paused ? 'hud.resume' : 'hud.pause');
+    var gb = $('btn-guide');
+    if (gb) gb.textContent = T('guide.open');
     if (role && view === 'lobby') refreshLobby();
   }
   (function () {
@@ -647,6 +702,13 @@
       hideOverlay();
       show('game'); paintHudMode(); updateHudStage(); paintStage();
       Sfx.startMusic(myStage);
+    } else if (d.t === 'pause') {
+      paused = !!d.v;
+      $('pause-card').classList.toggle('hidden', !paused);
+      $('pause-sub').textContent = T('pause.guest');
+      $('btn-pause').textContent = T(paused ? 'hud.resume' : 'hud.pause');
+      $('btn-pause').setAttribute('aria-pressed', paused ? 'true' : 'false');
+      if (!paused) lastSnapAt = Date.now();
     } else if (d.t === 'snap') {
       lastSnapAt = Date.now();
       prevSnap = curSnap; prevSnapAt = curSnapAt;
@@ -710,6 +772,11 @@
 
     if (role === 'guest') { guestFrame(ts, dt); return; }
     if (!running || !state) return;
+    if (paused) {
+      renderer.draw(state, { dt: 0, mine: mySlot() });
+      updateHud(state);
+      return;
+    }
 
     acc += dt;
     var steps = 0;
@@ -736,6 +803,11 @@
       lastSentInput = key; lastInputSentAt = ts;
     }
     if (!running || !mirror || !curSnap) return;
+    if (paused) {
+      renderer.draw(mirror, { dt: 0, mine: mySlot() });
+      updateHud(mirror);
+      return;
+    }
 
     // render one snapshot behind, interpolating up to the newest one
     var alpha = 1;
@@ -792,9 +864,13 @@
     if (!el) return;
     if (!p || p.absent) { el.hidden = true; return; }
     el.hidden = false;
-    var hearts = p.big ? 2 : 1;
-    el.querySelector('.hearts').textContent = hearts >= 2 ? '\u2665\u2665' : '\u2665\u2661';
-    el.classList.toggle('powered', hearts >= 2);
+    var hearts = Math.max(0, Math.min(3, typeof p.hp === 'number' ? p.hp : 3));
+    el.querySelector('.hearts').textContent =
+      '\u2605\u2605\u2605'.slice(0, hearts) + '\u2606\u2606\u2606'.slice(0, 3 - hearts);
+    el.classList.toggle('powered', !!p.big);
+    el.classList.toggle('starred', (p.star || 0) > 0);
+    el.classList.toggle('low', hearts <= 1);
+    el.setAttribute('aria-label', (p.color === 'green' ? 'B.T.' : 'S.C.') + ' ' + hearts + '/3');
   }
 
   function updateHud(st) {
@@ -823,12 +899,19 @@
     get running() { return running; },
     get roomCode() { return roomCode; },
     get snapCount() { return snapCount; },
+    get paused() { return paused; },
+    clock: function () { return { last: last, acc: acc }; },
+    get guideOpen() { return !$('guide-modal').classList.contains('hidden'); },
     get errors() { return errors; },
     get fps() { return fps; },
     get cost() { return Math.round(costMs * 100) / 100; },
     get stage() { return myStage; },
     get lobby() { return role === 'host' ? hostLobby : guestLobby; },
     setPick: setPick,
+    setPaused: setPaused,
+    togglePause: togglePause,
+    openGuide: openGuide,
+    closeGuide: closeGuide,
     setStage: function (id) { myStage = id; paintStage(); if (role === 'host') broadcastLobby(); },
     startSolo: function () { role = 'solo'; startGame(); },
     startLocal: function () { role = 'local'; startGame(); },

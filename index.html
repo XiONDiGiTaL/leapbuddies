@@ -10,7 +10,7 @@
 <meta property="og:description" content="A two-player co-op voxel platform adventure, playable in the browser with a room code.">
 <meta name="theme-color" content="#1b1430">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231b1430'/%3E%3Crect x='7' y='6' width='10' height='10' rx='2' fill='%23ffb84d'/%3E%3Crect x='18' y='11' width='7' height='7' rx='2' fill='%2346d6c6'/%3E%3Crect x='10' y='17' width='12' height='12' rx='2' fill='%23ff7a59'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=37">
+<link rel="stylesheet" href="style.css?v=40">
 </head>
 <body>
 <main id="app">
@@ -70,6 +70,7 @@
       <div class="menu-label" data-i18n="menu.deviceLabel">On this device</div>
       <button id="btn-local" class="big-btn alt" type="button" data-i18n="menu.local">Local 2P — two players, one keyboard</button>
       <button id="btn-solo" class="big-btn alt" type="button" data-i18n="menu.solo">Solo — just me</button>
+      <button id="btn-guide" class="big-btn alt guide-btn" type="button" data-i18n="guide.open">Field Guide</button>
     </div>
 
     <!-- how to play: white keyboard keycaps, one numbered card per action -->
@@ -149,13 +150,67 @@
 
       <ul class="howto-tips">
         <li data-i18n-html="tip.online"><b>Online</b> — each player uses their own keyboard, and everyone uses the Player 1 keys.</li>
-        <li data-i18n="tip.pickups">Bump gold blocks for bananas · a jar grants a second heart · three lives per run.</li>
+        <li data-i18n="tip.pickups">Bump gold blocks for bananas · food restores stars or lives · three stars and three lives per run.</li>
         <li data-i18n="tip.team">Both floor plates open the gate · stand on your buddy's head for a boost · pop their bubble to bring them back.</li>
         <li data-i18n="tip.close">Stay close: fall too far behind and you are floated back to your partner in a bubble.</li>
         <li data-i18n-html="tip.keys"><b>M</b> mutes · a gamepad works for Player 1 · on a phone, use the touch pad under the stage.</li>
       </ul>
     </section>
     <p id="menu-status" class="status" role="status"></p>
+
+    <!-- field guide: the rules, the snacks and the neighbours -->
+    <div id="guide-modal" class="guide-modal hidden" role="dialog" aria-modal="true" aria-labelledby="guide-title">
+      <div class="guide-sheet">
+        <div class="guide-head">
+          <h2 id="guide-title" data-i18n="guide.title">Field Guide</h2>
+          <button id="btn-guide-close" class="guide-close" type="button" data-i18n="guide.close" aria-label="Close">Close</button>
+        </div>
+        <p class="guide-sub" data-i18n="guide.sub"></p>
+        <div class="guide-grid">
+          <article class="guide-card">
+            <canvas class="guide-art wide" data-art="stars" width="168" height="58" aria-hidden="true"></canvas>
+            <h3 data-i18n="guide.healthTitle">Three stars</h3>
+            <p data-i18n="guide.health"></p>
+            <p data-i18n="guide.healthDown"></p>
+          </article>
+          <article class="guide-card">
+            <canvas class="guide-art" data-art="flag" width="64" height="64" aria-hidden="true"></canvas>
+            <h3 data-i18n="guide.livesTitle">Lives and checkpoints</h3>
+            <p data-i18n="guide.lives"></p>
+          </article>
+          <article class="guide-card">
+            <canvas class="guide-art" data-art="bubble" width="64" height="64" aria-hidden="true"></canvas>
+            <h3 data-i18n="guide.bubbleTitle">Bubbles (two-player)</h3>
+            <p data-i18n="guide.bubble"></p>
+            <p data-i18n="guide.bubbleTeam"></p>
+          </article>
+          <article class="guide-card foods">
+            <h3 data-i18n="guide.foodTitle">Street food</h3>
+            <ul class="food-list">
+              <li><canvas class="guide-art small" data-art="lahmacun" width="48" height="48" aria-hidden="true"></canvas><span data-i18n="guide.lahmacun"></span></li>
+              <li><canvas class="guide-art small" data-art="baklava" width="48" height="48" aria-hidden="true"></canvas><span data-i18n="guide.baklava"></span></li>
+              <li><canvas class="guide-art small" data-art="ayran" width="48" height="48" aria-hidden="true"></canvas><span data-i18n="guide.ayran"></span></li>
+              <li><canvas class="guide-art small" data-art="sujuk" width="48" height="48" aria-hidden="true"></canvas><span data-i18n="guide.sujuk"></span></li>
+            </ul>
+          </article>
+          <article class="guide-card wide">
+            <h3 data-i18n="guide.foesTitle">Who is out there</h3>
+            <ul class="foe-list">
+              <li><canvas class="guide-art small" data-art="icecream" width="48" height="48" aria-hidden="true"></canvas><span data-i18n="guide.dondurma"></span></li>
+              <li><canvas class="guide-art small" data-art="uncle" width="48" height="48" aria-hidden="true"></canvas><span data-i18n="guide.fehmi"></span></li>
+              <li><canvas class="guide-art small" data-art="grump" width="48" height="48" aria-hidden="true"></canvas><span data-i18n="guide.grandpa"></span></li>
+              <li><canvas class="guide-art small" data-art="hoodlum" width="48" height="48" aria-hidden="true"></canvas><span data-i18n="guide.hoodlum"></span></li>
+              <li><canvas class="guide-art small" data-art="sheller" width="48" height="48" aria-hidden="true"></canvas><span data-i18n="guide.sheller"></span></li>
+            </ul>
+          </article>
+        </div>
+        <ul class="guide-tips">
+          <li data-i18n="guide.tipStomp"></li>
+          <li data-i18n="guide.tipGate"></li>
+          <li data-i18n="guide.tipPause"></li>
+        </ul>
+      </div>
+    </div>
   </section>
 
   <!-- ============ LOBBY ============ -->
@@ -205,8 +260,8 @@
   <section id="view-game" class="hidden">
     <div class="hud">
       <span class="hud-chip lives-chip" id="hud-lives-chip"><span class="hud-label" data-i18n="hud.lives">Lives</span><b id="hud-lives">3</b></span>
-      <span class="hud-chip hearts-chip" id="hud-hearts-red"><span class="who">S.C.</span><b class="hearts">♥♡</b></span>
-      <span class="hud-chip hearts-chip" id="hud-hearts-green"><span class="who">B.T.</span><b class="hearts">♥♡</b></span>
+      <span class="hud-chip hearts-chip" id="hud-hearts-red"><span class="who">S.C.</span><b class="hearts">★★★</b></span>
+      <span class="hud-chip hearts-chip" id="hud-hearts-green"><span class="who">B.T.</span><b class="hearts">★★★</b></span>
       <span class="hud-chip"><span data-i18n="hud.bananas">Bananas</span> <b id="hud-coins">0</b></span>
       <span class="hud-chip"><span data-i18n="hud.score">Score</span> <b id="hud-score">0</b></span>
       <span class="hud-chip"><span data-i18n="hud.time">Time</span> <b id="hud-time">300</b></span>
@@ -217,10 +272,20 @@
         <input id="vol" class="vol" type="range" min="0" max="100" step="1" value="80"
                data-i18n-aria="hud.volume" aria-label="Volume">
       </span>
+      <button id="btn-pause" type="button" data-i18n="hud.pause" data-i18n-title="hud.pause" title="Pause (Esc)" aria-pressed="false">Pause</button>
       <button id="btn-leave-game" type="button" data-i18n="hud.leave">Leave</button>
     </div>
     <div class="stage-wrap">
       <canvas id="stage" width="1024" height="576"></canvas>
+      <div id="pause-card" class="pause-card hidden" role="dialog" aria-modal="true" aria-labelledby="pause-title">
+        <p class="pause-kicker">LEAP BUDDIES</p>
+        <h2 id="pause-title" data-i18n="pause.title">Paused</h2>
+        <p id="pause-sub" data-i18n="pause.sub">The stage is holding its breath.</p>
+        <div class="overlay-buttons">
+          <button id="btn-resume" class="big-btn primary" type="button" data-i18n="pause.resume">Resume</button>
+          <button id="btn-pause-leave" class="big-btn alt" type="button" data-i18n="pause.leave">Leave</button>
+        </div>
+      </div>
       <div id="overlay" class="overlay hidden">
         <div id="summary" class="summary hidden" role="group" data-i18n-aria="summary.aria" aria-label="Run summary">
           <p id="summary-kicker" class="summary-kicker">STAGE CLEAR</p>
@@ -260,13 +325,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="js/i18n.js?v=37"></script>
-<script src="js/engine.js?v=37"></script>
-<script src="js/camera.js?v=37"></script>
-<script src="js/render3d.js?v=37"></script>
-<script src="js/audio.js?v=37"></script>
-<script src="js/net.js?v=37"></script>
-<script src="js/progress.js?v=37"></script>
-<script src="js/main.js?v=37"></script>
+<script src="js/i18n.js?v=40"></script>
+<script src="js/engine.js?v=40"></script>
+<script src="js/camera.js?v=40"></script>
+<script src="js/render3d.js?v=40"></script>
+<script src="js/audio.js?v=40"></script>
+<script src="js/net.js?v=40"></script>
+<script src="js/progress.js?v=40"></script>
+<script src="js/main.js?v=40"></script>
 </body>
 </html>

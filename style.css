@@ -711,3 +711,145 @@ footer { margin-top: 26px; color: #6c628f; font-size: 11.5px; letter-spacing: .5
   .logo-cubes .cube { animation: none; }
   .card-shine { display: none; }
 }
+
+/* ---------------- three-star health ---------------- */
+.hearts-chip .hearts {
+  color: var(--amber);
+  letter-spacing: 2px;
+  font-size: 15px;
+  text-shadow: 0 0 8px rgba(255, 184, 77, .35);
+}
+.hearts-chip.low .hearts { color: var(--coral); text-shadow: 0 0 10px rgba(255, 90, 60, .5); }
+.hearts-chip.starred {
+  border-color: #ffe066;
+  animation: star-glow .42s infinite alternate;
+}
+@keyframes star-glow {
+  from { box-shadow: 0 3px 0 rgba(0, 0, 0, .3); }
+  to { box-shadow: 0 0 18px rgba(255, 224, 102, .85); }
+}
+
+/* pause card, inside the stage frame */
+.pause-card {
+  z-index: 4;
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 10px;
+  padding: 18px; text-align: center;
+  background: radial-gradient(circle at 50% 42%, rgba(28, 18, 54, .82), rgba(7, 5, 16, .94));
+  backdrop-filter: blur(4px);
+}
+.pause-kicker {
+  font-size: 10px; letter-spacing: 4px; font-weight: 900;
+  color: var(--muted); text-transform: uppercase;
+}
+.pause-card h2 {
+  font-size: clamp(26px, 4.6vw, 40px);
+  color: #fff; letter-spacing: 1px;
+  text-shadow: 0 3px 0 rgba(0, 0, 0, .5);
+}
+.pause-card p { color: var(--muted); font-size: 12.5px; letter-spacing: .6px; }
+.pause-card .overlay-buttons { margin-top: 6px; }
+
+/* ---------------- field guide ---------------- */
+.guide-btn {
+  border-color: rgba(255, 224, 102, .6) !important;
+  color: #ffeec2 !important;
+}
+.guide-modal {
+  position: fixed; inset: 0; z-index: 40;
+  display: flex; align-items: center; justify-content: center;
+  padding: 18px;
+  background: rgba(8, 5, 18, .78);
+  backdrop-filter: blur(4px);
+}
+.guide-sheet {
+  width: min(900px, 96vw);
+  max-height: 88vh;
+  overflow-y: auto;
+  padding: 20px 22px 18px;
+  background: linear-gradient(180deg, #251c46, #191229);
+  border: 3px solid var(--edge-hi);
+  border-radius: 18px;
+  box-shadow: 0 10px 0 rgba(0, 0, 0, .35), 0 26px 60px rgba(0, 0, 0, .55);
+  text-align: left;
+}
+.guide-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.guide-head h2 {
+  font-size: clamp(22px, 3.4vw, 30px);
+  letter-spacing: 1.2px; color: #fff;
+  text-shadow: 0 3px 0 rgba(0, 0, 0, .4);
+}
+.guide-close {
+  background: transparent;
+  border: 2px solid var(--edge);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 6px 13px;
+  font: inherit; font-weight: 700; font-size: 12px;
+  cursor: pointer;
+}
+.guide-close:hover { border-color: var(--edge-hi); color: var(--amber); }
+.guide-sub {
+  margin: 6px 0 16px;
+  color: var(--muted);
+  font-size: 12.5px; line-height: 1.5;
+  max-width: 68ch;
+}
+.guide-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 12px;
+}
+.guide-card {
+  padding: 12px 14px;
+  background: rgba(12, 8, 26, .55);
+  border: 2px solid var(--edge);
+  border-radius: 12px;
+}
+.guide-card.wide { grid-column: 1 / -1; }
+.guide-card.foods { grid-column: span 2; }
+.guide-card h3 {
+  font-size: 11.5px; letter-spacing: 1.5px; text-transform: uppercase;
+  color: var(--teal); margin-bottom: 7px;
+}
+.guide-card p {
+  font-size: 12.5px; line-height: 1.55; color: #d9d4ea;
+  margin: 0 0 7px;
+}
+.guide-card p:last-child { margin-bottom: 0; }
+/* Each guide item gets the same voxel model the stage uses, rendered once
+ * by render3d into a tiny transparent canvas. */
+.guide-art {
+  display: block; flex: 0 0 auto;
+  width: 64px; height: 64px;
+  margin: 0 0 8px;
+}
+.guide-art.wide { width: 168px; height: 58px; }
+.guide-art.small { width: 48px; height: 48px; }
+.food-list, .foe-list {
+  list-style: none; display: grid; gap: 7px;
+  font-size: 12.5px; line-height: 1.45; color: #d9d4ea;
+}
+.food-list li, .foe-list li {
+  display: flex; gap: 10px; align-items: center;
+}
+.food-list li .guide-art, .foe-list li .guide-art { margin: 0; }
+.foe-list li::before { content: "▸"; color: var(--coral); flex: 0 0 auto; }
+.guide-tips {
+  list-style: none; display: grid; gap: 6px;
+  margin-top: 14px; padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, .09);
+  font-size: 12px; color: var(--muted); line-height: 1.5;
+}
+.guide-tips li::before { content: "▸ "; color: var(--amber); }
+
+@media (max-width: 660px) {
+  .guide-modal { padding: 8px; }
+  .guide-sheet { padding: 14px; max-height: 92vh; }
+  .guide-grid { grid-template-columns: 1fr; }
+  .guide-card.foods { grid-column: auto; }
+  .guide-head h2 { font-size: 20px; }
+}

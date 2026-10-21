@@ -9,7 +9,21 @@
   var TILE = 16;
   var VIEW_W = 512, VIEW_H = 288;
   var T = { EMPTY: 0, SOLID: 1, BRICK: 2, QBLOCK: 3, PBLOCK: 4, USED: 5, GATE: 6 };
-  var LEVEL_W = 200, LEVEL_H = 18;
+  var LEVEL_W = 300, LEVEL_H = 18;
+
+  /* Every buddy has three stars. A hit costs one, a fall costs the whole
+   * bar (down), and the bar refills at a checkpoint respawn. */
+  var MAX_HEARTS = 3;
+  var STAR_TICKS = 600;                  // 10 seconds of sujuk power
+
+  /* Voxel food. Lahmacun is a full heal, baklava one star, ayran a spare
+   * life and sujuk the invincibility star. */
+  var FOODS = {
+    lahmacun: { heal: 3, score: 500 },
+    baklava: { heal: 1, score: 250 },
+    ayran: { life: 1, score: 100 },
+    sujuk: { star: STAR_TICKS, score: 300 }
+  };
 
   /* Co-op catch-up rule. When the two players split further than
    * SPLIT_FOLLOW the camera follows whoever is ahead, and once the one
@@ -18,6 +32,10 @@
    * camera backwards or get stranded off-screen. */
   var SPLIT_FOLLOW = 190;
   var CARRY_GAP = 250;
+
+  /* Shared stage anchors. The two plates at 63/66 open the gate at 70; the
+   * midpoint flag stands at 160 and the goal plateau starts at 289. */
+  var GATE_TX = 70, MID_TX = 160, GOAL_TX = 289;
 
   /* ------------------------------------------------------------------ */
   /* Level construction (all layout is original, built from helpers)     */
@@ -41,210 +59,425 @@
 
   var KIND = { solid: T.SOLID, brick: T.BRICK, q: T.QBLOCK, p: T.PBLOCK };
 
+  /* ------------------------------------------------------------------ */
+  /* Stage layouts                                                       */
+  /*                                                                    */
+  /* Each city is a full-length course (300 tiles, about 1.5x World 1-1)  */
+  /* with two routes through it: a street/beach lane at the ground line   */
+  /* and a roof/terrace lane six rows above it, joined by stair pillars.  */
+  /* Four anchors never move, because the gate rule, the checkpoint and  */
+  /* the goal test depend on them: the gate tower at tx 70, its two floor */
+  /* plates at 63/66, the midpoint flag at 160 and the goal plateau from  */
+  /* 289.                                                                */
+  /*                                                                    */
+  /* Height discipline (checked by the smoke test): the ground surface   */
+  /* is row 15, roofs are row 9, so a roof is 96px up with five clear     */
+  /* rows under it. Nothing is stacked closer than three rows above a    */
+  /* walkable surface, which is what keeps low ceilings out of the game. */
+  /* ------------------------------------------------------------------ */
   var STAGE_LAYOUTS = {
-    /* İzmir — sunset coast. Wide beach, gentle stair steps down to the
-     * promenade, dondurma sellers working the crowd. */
+    /* İzmir — sunset coast. Wide sand, short pier roofs on stilts, and
+     * dondurma stands on the promenade. */
     izmir: function () {
-      var coins = [];
-      dot(coins, 8, 12); dot(coins, 9, 11); dot(coins, 10, 11); dot(coins, 11, 12);
-      row(coins, 24, 25, 13); dot(coins, 28, 10); dot(coins, 29, 10);
-      row(coins, 44, 46, 12);
-      row(coins, 56, 59, 12); row(coins, 59, 66, 6);
-      row(coins, 74, 79, 5); row(coins, 76, 80, 13);
-      dot(coins, 86, 10); dot(coins, 88, 8);
-      row(coins, 93, 95, 13);
-      row(coins, 115, 128, 9);
-      row(coins, 138, 141, 13);
-      row(coins, 170, 174, 7); dot(coins, 183, 7); dot(coins, 184, 7);
+      var coins = [], blocks = [];
+      /* A — the beach opening */
+      blocks.push([5, 11, 1, 1, 'brick'], [6, 11, 1, 1, 'q'], [7, 11, 1, 1, 'brick'], [8, 11, 1, 1, 'p']);
+      blocks.push([16, 12, 2, 3]);                       // stair pillar
+      blocks.push([18, 9, 8, 1]);                        // pier roof 18..25
+      /* B — the second pier */
+      blocks.push([34, 12, 2, 3]);
+      blocks.push([36, 9, 9, 1]);                        // roof 36..44
+      /* C — switch plaza, kept flat so both plates read clearly */
+      blocks.push([56, 11, 2, 1], [58, 10, 2, 1]);
+      /* D — beyond the gate */
+      blocks.push([74, 12, 2, 3]);
+      blocks.push([78, 9, 10, 1]);                       // roof 78..87
+      /* E — the long surf gap */
+      blocks.push([94, 13, 3, 2], [98, 12, 2, 3], [100, 9, 9, 1]);
+      /* F — dondurma stands, then a pier */
+      blocks.push([118, 13, 4, 2], [122, 11, 3, 1]);
+      blocks.push([125, 12, 2, 3], [127, 9, 8, 1]);
+      /* G — ruined bridge */
+      blocks.push([140, 11, 4, 1], [144, 12, 2, 3], [146, 9, 5, 1]);
+      /* H — midpoint plaza */
+      blocks.push([164, 11, 4, 1], [168, 10, 3, 1]);
+      /* I — the cliff stairs */
+      blocks.push([182, 12, 2, 3], [184, 9, 7, 1], [192, 11, 3, 1]);
+      /* J — cliff road */
+      blocks.push([202, 11, 3, 1], [208, 12, 2, 3], [210, 9, 7, 1]);
+      /* K — palm decks */
+      blocks.push([224, 11, 4, 1], [227, 12, 2, 3], [229, 9, 7, 1], [236, 11, 3, 1]);
+      /* L — the last pier */
+      blocks.push([246, 11, 3, 1], [250, 12, 2, 3], [252, 9, 5, 1]);
+      /* M — lighthouse approach */
+      blocks.push([268, 11, 3, 1], [274, 12, 2, 3], [276, 9, 4, 1]);
+      /* N — the flag steps */
+      blocks.push([283, 13, 2, 2], [285, 11, 2, 1], [287, 9, 2, 1]);
+
+      row(coins, 6, 8, 13); row(coins, 12, 15, 10);
+      row(coins, 18, 25, 8);
+      row(coins, 32, 33, 13); row(coins, 36, 44, 8);
+      row(coins, 56, 59, 9);
+      row(coins, 74, 77, 10); row(coins, 78, 87, 8);
+      row(coins, 94, 96, 12); row(coins, 100, 108, 8);
+      row(coins, 118, 121, 12); row(coins, 127, 134, 8);
+      row(coins, 140, 143, 10); row(coins, 146, 150, 8);
+      row(coins, 160, 163, 13); row(coins, 168, 170, 9);
+      row(coins, 184, 190, 8); row(coins, 192, 194, 10);
+      row(coins, 202, 204, 10); row(coins, 210, 216, 8);
+      row(coins, 224, 226, 10); row(coins, 229, 235, 8); row(coins, 236, 238, 10);
+      row(coins, 246, 248, 10); row(coins, 252, 256, 8);
+      row(coins, 268, 270, 10); row(coins, 276, 279, 8);
+      row(coins, 285, 288, 8);
+
       return {
-        grounds: [[0, 29], [34, 47], [53, 68], [69, 84], [90, 104], [135, 151], [156, 159]],
-        blocks: [
-          [17, 11, 1, 1, 'brick'], [18, 11, 1, 1, 'q'], [19, 11, 1, 1, 'brick'],
-          [20, 11, 1, 1, 'p'], [21, 11, 1, 1, 'brick'],
-          [26, 13, 2, 2], [28, 12, 2, 3],
-          [40, 11, 1, 1, 'q'], [41, 11, 1, 1, 'brick'], [42, 11, 1, 1, 'q'],
-          [56, 11, 2, 1], [58, 10, 2, 1],
-          [73, 7, 8, 1],
-          [86, 12, 2, 1], [88, 10, 2, 1],
-          [98, 11, 1, 1, 'brick'], [99, 11, 1, 1, 'q'], [100, 11, 1, 1, 'brick'],
-          [113, 12, 10, 6], [123, 13, 8, 5], [131, 14, 4, 4],
-          [144, 11, 1, 1, 'brick'], [145, 11, 1, 1, 'q'], [146, 11, 1, 1, 'brick'],
-          [160, 13, 3, 5], [163, 11, 3, 7], [166, 9, 3, 9]
-        ],
+        grounds: [[0, 26], [32, 46], [52, 68], [70, 88], [94, 110], [116, 132],
+                  [138, 152], [158, 172], [178, 194], [200, 216], [222, 238],
+                  [244, 260], [265, 282], [285, 299]],
+        blocks: blocks,
         coins: coins,
         enemies: [
           { type: 'walker', tx: 14 },
-          { type: 'walker', skin: 'icecream', tx: 38 },
+          { type: 'walker', skin: 'icecream', tx: 21, ty: 9 },
+          { type: 'walker', tx: 32 },
+          { type: 'walker', skin: 'icecream', tx: 40, ty: 9 },
           { type: 'sheller', tx: 57 },
-          { type: 'walker', skin: 'icecream', tx: 66 },
-          { type: 'walker', tx: 78 },
-          { type: 'walker', skin: 'icecream', tx: 96 },
-          { type: 'walker', tx: 116, ty: 11 },
-          { type: 'sheller', tx: 141 },
-          { type: 'walker', tx: 148 },
-          { type: 'walker', tx: 180, ty: 8 }
+          { type: 'walker', tx: 66 },
+          { type: 'walker', skin: 'icecream', tx: 81, ty: 9 },
+          { type: 'walker', tx: 87 },
+          { type: 'sheller', tx: 104, ty: 9 },
+          { type: 'walker', tx: 108 },
+          { type: 'walker', skin: 'icecream', tx: 120, ty: 13 },
+          { type: 'walker', tx: 131, ty: 9 },
+          { type: 'sheller', tx: 143 },
+          { type: 'walker', tx: 148, ty: 9 },
+          { type: 'walker', skin: 'icecream', tx: 166, ty: 12 },
+          { type: 'walker', tx: 187, ty: 9 },
+          { type: 'sheller', tx: 193 },
+          { type: 'walker', tx: 213, ty: 9 },
+          { type: 'walker', skin: 'icecream', tx: 218 },
+          { type: 'walker', tx: 231, ty: 9 },
+          { type: 'sheller', tx: 240 },
+          { type: 'walker', tx: 253, ty: 9 },
+          { type: 'walker', skin: 'icecream', tx: 266 },
+          { type: 'walker', tx: 277, ty: 9 },
+          { type: 'walker', tx: 281 }
+        ],
+        foods: [
+          { type: 'baklava', tx: 84, ty: 8 },
+          { type: 'lahmacun', tx: 131, ty: 8 },
+          { type: 'sujuk', tx: 150, ty: 8 },
+          { type: 'baklava', tx: 205, ty: 11 },
+          { type: 'ayran', tx: 258, ty: 13 }
         ],
         platforms: [
-          [47 * TILE, 13 * TILE, 48, 8, 'x', 47 * TILE, 51 * TILE, 0.7],
-          [104.5 * TILE, 13 * TILE, 72, 8, 'y', 118, 232, 0.55],
-          [151 * TILE, 13 * TILE, 48, 8, 'x', 151 * TILE, 154 * TILE, 0.7]
+          [112 * TILE, 13 * TILE, 48, 8, 'x', 112 * TILE, 114.5 * TILE, 0.7],
+          [217 * TILE, 13 * TILE, 64, 8, 'x', 217 * TILE, 220 * TILE, 0.6],
+          [240.5 * TILE, 13 * TILE, 64, 8, 'y', 11 * TILE, 14 * TILE, 0.45],
+          [262 * TILE, 13 * TILE, 48, 8, 'x', 262 * TILE, 263.5 * TILE, 0.8]
         ]
       };
     },
 
-    /* New York — midnight avenue. Stoop steps up front, then stacked
-     * alley towers to climb, with hoodlums loitering on the ledges. */
+    /* New York — midnight avenue. Rooftop lane over the el-train, fire
+     * escapes at mid height, and a cramped street full of gaps. */
     nyc: function () {
-      var coins = [];
-      dot(coins, 9, 12); dot(coins, 10, 11); dot(coins, 11, 11); dot(coins, 12, 12);
-      row(coins, 22, 23, 12);
-      dot(coins, 26, 10); dot(coins, 27, 10);
-      row(coins, 34, 36, 12);
-      row(coins, 38, 40, 10);
-      row(coins, 44, 46, 12);
-      row(coins, 56, 58, 10); row(coins, 59, 66, 6);
-      row(coins, 74, 79, 5); row(coins, 76, 80, 13);
-      dot(coins, 86, 10); dot(coins, 88, 8);
-      row(coins, 93, 95, 13);
-      row(coins, 114, 118, 8); row(coins, 120, 126, 10); row(coins, 128, 134, 12);
-      row(coins, 138, 141, 13);
-      row(coins, 170, 174, 7); dot(coins, 183, 7); dot(coins, 184, 7);
+      var coins = [], blocks = [];
+      /* A — stoops and rooftops */
+      blocks.push([5, 11, 1, 1, 'brick'], [6, 11, 1, 1, 'q'], [7, 11, 1, 1, 'brick'], [8, 11, 1, 1, 'p']);
+      blocks.push([14, 12, 2, 3], [16, 9, 8, 1]);          // roof 16..23
+      /* B — tenements */
+      blocks.push([33, 12, 2, 3], [35, 9, 9, 1]);          // roof 35..43
+      blocks.push([45, 11, 2, 1]);
+      /* C — plates under the el-train */
+      blocks.push([56, 11, 2, 1], [58, 10, 2, 1]);
+      /* D — midtown block */
+      blocks.push([73, 12, 2, 3], [75, 9, 11, 1]);         // roof 75..85
+      /* E — alley catwalks */
+      blocks.push([94, 13, 3, 2], [97, 11, 4, 1], [102, 10, 4, 1]);
+      /* F — the tower with two roofs */
+      blocks.push([113, 12, 2, 3], [115, 9, 10, 1]);       // roof 115..124
+      /* G — fire escapes */
+      blocks.push([134, 11, 3, 1], [140, 10, 3, 1]);
+      /* H — midpoint under the water tower */
+      blocks.push([155, 12, 2, 3], [157, 9, 8, 1]);        // roof 157..164
+      blocks.push([165, 11, 4, 1]);
+      /* I — brownstone row */
+      blocks.push([177, 12, 2, 3], [179, 9, 9, 1]);        // roof 179..187
+      /* J — rooftop gap */
+      blocks.push([197, 13, 3, 2], [201, 11, 4, 1], [206, 10, 3, 1]);
+      /* K — the billboard run */
+      blocks.push([218, 11, 4, 1], [223, 10, 4, 1]);
+      /* L — last tenement */
+      blocks.push([240, 12, 2, 3], [242, 9, 9, 1]);        // roof 242..250
+      /* M — the spire */
+      blocks.push([260, 13, 3, 2], [264, 11, 3, 1], [268, 10, 4, 1]);
+      /* N — flag steps */
+      blocks.push([282, 13, 2, 2], [284, 11, 2, 1], [286, 9, 2, 1]);
+
+      row(coins, 5, 8, 13); row(coins, 10, 13, 10);
+      row(coins, 16, 23, 8);
+      row(coins, 31, 32, 13); row(coins, 35, 43, 8);
+      row(coins, 56, 59, 9);
+      row(coins, 71, 72, 13); row(coins, 75, 85, 8);
+      row(coins, 89, 93, 13); row(coins, 97, 100, 10); row(coins, 102, 105, 9);
+      row(coins, 115, 124, 8);
+      row(coins, 134, 136, 10); row(coins, 140, 142, 9);
+      row(coins, 152, 154, 13); row(coins, 157, 164, 8); row(coins, 165, 168, 10);
+      row(coins, 179, 187, 8);
+      row(coins, 197, 199, 12); row(coins, 201, 204, 10); row(coins, 206, 208, 9);
+      row(coins, 218, 221, 10); row(coins, 223, 226, 9);
+      row(coins, 242, 250, 8);
+      row(coins, 260, 262, 12); row(coins, 264, 266, 10); row(coins, 268, 271, 9);
+      row(coins, 284, 287, 8);
+
       return {
-        grounds: [[0, 27], [32, 45], [53, 68], [69, 84], [90, 104], [135, 151], [156, 159]],
-        blocks: [
-          [15, 11, 1, 1, 'brick'], [16, 11, 1, 1, 'q'], [17, 11, 1, 1, 'brick'],
-          [18, 11, 1, 1, 'p'],
-          [24, 13, 3, 2], [38, 12, 2, 3],
-          [40, 11, 1, 1, 'q'], [41, 11, 1, 1, 'brick'], [42, 11, 1, 1, 'q'],
-          [56, 11, 2, 1], [58, 9, 2, 1],
-          [73, 7, 8, 1],
-          [86, 12, 2, 1], [88, 10, 2, 1],
-          [98, 11, 1, 1, 'brick'], [99, 11, 1, 1, 'q'], [100, 11, 1, 1, 'brick'],
-          [113, 10, 6, 8], [119, 12, 8, 6], [127, 14, 8, 4],
-          [144, 11, 1, 1, 'brick'], [145, 11, 1, 1, 'q'], [146, 11, 1, 1, 'brick'],
-          [160, 13, 3, 5], [164, 11, 3, 7], [167, 9, 2, 9]
-        ],
+        grounds: [[0, 24], [30, 47], [52, 68], [70, 86], [92, 106], [112, 126],
+                  [132, 147], [153, 167], [174, 189], [195, 209], [216, 230],
+                  [237, 252], [258, 272], [280, 299]],
+        blocks: blocks,
         coins: coins,
         enemies: [
           { type: 'walker', skin: 'hoodlum', tx: 12 },
-          { type: 'sheller', tx: 22 },
-          { type: 'walker', skin: 'hoodlum', tx: 36 },
-          { type: 'walker', tx: 43 },
-          { type: 'walker', skin: 'hoodlum', tx: 57 },
-          { type: 'walker', tx: 66 },
-          { type: 'sheller', tx: 79 },
-          { type: 'walker', tx: 96 },
-          { type: 'walker', skin: 'hoodlum', tx: 116, ty: 8 },
-          { type: 'sheller', tx: 142 },
-          { type: 'walker', tx: 181, ty: 8 }
+          { type: 'walker', tx: 18, ty: 9 },
+          { type: 'sheller', tx: 23 },
+          { type: 'walker', skin: 'hoodlum', tx: 30 },
+          { type: 'walker', tx: 40, ty: 9 },
+          { type: 'walker', tx: 46 },
+          { type: 'sheller', tx: 58 },
+          { type: 'walker', skin: 'hoodlum', tx: 64 },
+          { type: 'walker', tx: 79, ty: 9 },
+          { type: 'walker', skin: 'hoodlum', tx: 84 },
+          { type: 'sheller', tx: 97 },
+          { type: 'walker', tx: 104 },
+          { type: 'walker', skin: 'hoodlum', tx: 120, ty: 9 },
+          { type: 'walker', tx: 133 },
+          { type: 'walker', tx: 140, ty: 10 },
+          { type: 'sheller', tx: 148 },
+          { type: 'walker', skin: 'hoodlum', tx: 160, ty: 9 },
+          { type: 'walker', tx: 168 },
+          { type: 'walker', tx: 183, ty: 9 },
+          { type: 'sheller', tx: 191 },
+          { type: 'walker', skin: 'hoodlum', tx: 202, ty: 12 },
+          { type: 'walker', tx: 209 },
+          { type: 'walker', skin: 'hoodlum', tx: 219 },
+          { type: 'sheller', tx: 226 },
+          { type: 'walker', tx: 245, ty: 9 },
+          { type: 'walker', skin: 'hoodlum', tx: 256 },
+          { type: 'walker', tx: 270, ty: 10 },
+          { type: 'walker', tx: 279 }
+        ],
+        foods: [
+          { type: 'baklava', tx: 22, ty: 8 },
+          { type: 'lahmacun', tx: 117, ty: 8 },
+          { type: 'sujuk', tx: 141, ty: 9 },
+          { type: 'baklava', tx: 184, ty: 8 },
+          { type: 'ayran', tx: 251, ty: 13 }
         ],
         platforms: [
-          [47 * TILE, 13 * TILE, 48, 8, 'x', 47 * TILE, 51 * TILE, 0.7],
-          [104.5 * TILE, 13 * TILE, 72, 8, 'y', 96, 232, 0.75],
-          [151 * TILE, 13 * TILE, 48, 8, 'x', 151 * TILE, 154 * TILE, 0.7]
+          [107 * TILE, 13 * TILE, 48, 8, 'x', 107 * TILE, 109 * TILE, 0.75],
+          [168.5 * TILE, 13 * TILE, 64, 8, 'x', 168.5 * TILE, 172 * TILE, 0.6],
+          [211 * TILE, 13 * TILE, 48, 8, 'y', 10 * TILE, 14 * TILE, 0.5],
+          [232 * TILE, 13 * TILE, 48, 8, 'x', 232 * TILE, 235 * TILE, 0.7],
+          [273 * TILE, 13 * TILE, 64, 8, 'x', 273 * TILE, 277 * TILE, 0.55]
         ]
       };
     },
 
-    /* İstanbul — dusk over the strait. One long terrace high above the
-     * street, patrolled by moustachioed uncles with flat caps. */
+    /* İstanbul — dusk over the strait. One enormous viaduct terrace runs
+     * over the street for a third of the stage, so the whole middle has a
+     * high road and a low road at the same time. Minarets crop up on both. */
     istanbul: function () {
-      var coins = [];
-      dot(coins, 8, 12); dot(coins, 9, 11); dot(coins, 10, 11); dot(coins, 11, 12);
-      row(coins, 24, 25, 13); dot(coins, 28, 10); dot(coins, 29, 10);
-      row(coins, 44, 46, 12);
-      row(coins, 56, 59, 12); row(coins, 59, 66, 6);
-      row(coins, 74, 79, 5); row(coins, 76, 80, 13);
-      dot(coins, 86, 10); dot(coins, 88, 8);
-      row(coins, 93, 95, 13);
-      row(coins, 115, 128, 9);
-      row(coins, 138, 141, 13);
-      row(coins, 170, 174, 7); dot(coins, 183, 7); dot(coins, 184, 7);
+      var coins = [], blocks = [];
+      /* A — the foreshore */
+      blocks.push([12, 11, 1, 1, 'brick'], [13, 11, 1, 1, 'q'], [14, 11, 1, 1, 'brick'], [15, 11, 1, 1, 'p']);
+      blocks.push([22, 13, 2, 2]);
+      /* B — the first minaret */
+      blocks.push([36, 13, 3, 2], [40, 11, 2, 1], [42, 9, 2, 1]);
+      /* C — plates under the el */
+      blocks.push([56, 11, 2, 1], [58, 10, 2, 1]);
+      /* D — a short viaduct before the gate */
+      blocks.push([74, 12, 2, 3], [76, 9, 8, 1]);
+      /* E — stairs up to the long terrace */
+      blocks.push([95, 12, 2, 3]);
+      blocks.push([99, 9, 38, 1]);                   // 99..136
+      blocks.push([141, 9, 28, 1]);                  // 141..168
+      blocks.push([173, 9, 24, 1]);                  // 173..196
+      /* its supports, hanging from the deck into the street */
+      blocks.push([110, 10, 1, 5], [126, 10, 1, 5], [150, 10, 1, 5], [184, 10, 1, 5]);
+      /* F — midpoint: a terrace landing */
+      /* G — second minaret and a bazaar */
+      blocks.push([202, 13, 3, 2], [206, 11, 3, 1], [210, 9, 3, 1]);
+      blocks.push([216, 11, 3, 1]);
+      /* H — bazaar steps */
+      blocks.push([224, 11, 4, 1], [229, 10, 4, 1], [234, 11, 3, 1]);
+      /* I — ferry pier */
+      blocks.push([246, 11, 3, 1], [252, 11, 4, 1], [257, 13, 2, 2]);
+      /* J — the last dome */
+      blocks.push([268, 13, 3, 2], [272, 11, 3, 1], [276, 9, 4, 1]);
+      /* K — flag steps */
+      blocks.push([283, 13, 2, 2], [285, 11, 2, 1], [287, 9, 2, 1]);
+
+      row(coins, 5, 8, 13); row(coins, 12, 15, 10);
+      row(coins, 22, 25, 12);
+      row(coins, 36, 38, 12); row(coins, 42, 43, 8);
+      row(coins, 56, 59, 9);
+      row(coins, 74, 75, 10); row(coins, 76, 83, 8);
+      row(coins, 99, 136, 8);
+      row(coins, 141, 168, 8);
+      row(coins, 173, 196, 8);
+      row(coins, 158, 161, 11);
+      row(coins, 202, 205, 12); row(coins, 210, 212, 8);
+      row(coins, 216, 218, 10);
+      row(coins, 224, 227, 10); row(coins, 229, 232, 9);
+      row(coins, 246, 248, 10); row(coins, 252, 255, 10);
+      row(coins, 268, 270, 12); row(coins, 276, 279, 8);
+      row(coins, 285, 288, 8);
+
       return {
-        grounds: [[0, 29], [34, 46], [53, 68], [69, 84], [90, 104], [135, 151], [156, 159]],
-        blocks: [
-          [17, 11, 1, 1, 'brick'], [18, 11, 1, 1, 'q'], [19, 11, 1, 1, 'brick'],
-          [20, 11, 1, 1, 'p'], [21, 11, 1, 1, 'brick'],
-          [26, 13, 2, 2], [28, 12, 2, 3],
-          [40, 11, 1, 1, 'q'], [41, 11, 1, 1, 'brick'], [42, 11, 1, 1, 'q'],
-          [56, 11, 2, 1],
-          [73, 7, 8, 1],
-          [86, 12, 2, 1], [88, 10, 2, 1],
-          [98, 11, 1, 1, 'brick'], [99, 11, 1, 1, 'q'], [100, 11, 1, 1, 'brick'],
-          [113, 11, 20, 7], [133, 13, 2, 5],
-          [144, 11, 1, 1, 'brick'], [145, 11, 1, 1, 'q'], [146, 11, 1, 1, 'brick'],
-          [160, 13, 3, 5], [163, 11, 3, 7], [166, 9, 3, 9]
-        ],
+        grounds: [[0, 28], [33, 47], [53, 68], [70, 90], [95, 112], [117, 133],
+                  [139, 154], [159, 175], [180, 196], [201, 217], [222, 238],
+                  [243, 259], [265, 281], [284, 299]],
+        blocks: blocks,
         coins: coins,
         enemies: [
-          { type: 'walker', skin: 'uncle', tx: 15 },
-          { type: 'sheller', tx: 24 },
-          { type: 'walker', skin: 'uncle', tx: 38 },
-          { type: 'walker', tx: 57 },
-          { type: 'walker', tx: 66 },
-          { type: 'sheller', tx: 79 },
-          { type: 'walker', skin: 'uncle', tx: 96 },
-          { type: 'walker', tx: 118, ty: 10 },
-          { type: 'walker', tx: 124, ty: 10 },
-          { type: 'sheller', tx: 142 },
-          { type: 'walker', tx: 180, ty: 8 }
+          { type: 'walker', skin: 'uncle', tx: 14 },
+          { type: 'walker', tx: 20 },
+          { type: 'sheller', tx: 26 },
+          { type: 'walker', skin: 'uncle', tx: 38, ty: 13 },
+          { type: 'walker', tx: 45 },
+          { type: 'walker', skin: 'uncle', tx: 58 },
+          { type: 'sheller', tx: 66 },
+          { type: 'walker', tx: 80, ty: 9 },
+          { type: 'walker', skin: 'uncle', tx: 102, ty: 9 },
+          { type: 'walker', tx: 110, ty: 9 },
+          { type: 'sheller', tx: 118 },
+          { type: 'walker', skin: 'uncle', tx: 128, ty: 9 },
+          { type: 'walker', tx: 133, ty: 9 },
+          { type: 'walker', skin: 'uncle', tx: 148, ty: 9 },
+          { type: 'walker', tx: 152 },
+          { type: 'walker', tx: 162, ty: 9 },
+          { type: 'sheller', tx: 176, ty: 9 },
+          { type: 'walker', skin: 'uncle', tx: 188, ty: 9 },
+          { type: 'walker', tx: 194 },
+          { type: 'walker', skin: 'uncle', tx: 208, ty: 9 },
+          { type: 'walker', tx: 214 },
+          { type: 'sheller', tx: 226, ty: 12 },
+          { type: 'walker', skin: 'uncle', tx: 236 },
+          { type: 'walker', tx: 250, ty: 11 },
+          { type: 'walker', skin: 'uncle', tx: 262 },
+          { type: 'walker', tx: 274, ty: 9 },
+          { type: 'walker', tx: 282 }
+        ],
+        foods: [
+          { type: 'baklava', tx: 64, ty: 12 },
+          { type: 'lahmacun', tx: 160, ty: 11 },
+          { type: 'sujuk', tx: 145, ty: 8 },
+          { type: 'baklava', tx: 230, ty: 9 },
+          { type: 'ayran', tx: 256, ty: 13 }
         ],
         platforms: [
-          [47 * TILE, 13 * TILE, 48, 8, 'x', 47 * TILE, 51 * TILE, 0.7],
-          [104.5 * TILE, 13 * TILE, 72, 8, 'y', 118, 232, 0.45],
-          [151 * TILE, 13 * TILE, 48, 8, 'x', 151 * TILE, 154 * TILE, 0.7]
+          [50 * TILE, 13 * TILE, 48, 8, 'x', 50 * TILE, 51 * TILE, 0.65],
+          [113 * TILE, 13 * TILE, 48, 8, 'x', 113 * TILE, 116 * TILE, 0.7],
+          [137 * TILE, 13 * TILE, 32, 8, 'y', 11 * TILE, 14 * TILE, 0.45],
+          [197 * TILE, 13 * TILE, 48, 8, 'x', 197 * TILE, 198 * TILE, 0.7],
+          [261 * TILE, 13 * TILE, 64, 8, 'x', 261 * TILE, 264 * TILE, 0.6]
         ]
       };
     },
 
-    /* Tampa — sunny palms. Low sandy dunes, a slow ferry across the hole
-     * in the pavement, grumpy retirees out for a walk. */
+    /* Tampa — sunny palms. Low dunes, a long plank pier over the water and
+     * a slow ferry. Grumpy retirees walk the beach and the pier. */
     tampa: function () {
-      var coins = [];
-      dot(coins, 8, 12); dot(coins, 9, 11); dot(coins, 10, 11); dot(coins, 11, 12);
-      row(coins, 22, 24, 13); dot(coins, 28, 10); dot(coins, 29, 10);
-      row(coins, 44, 46, 12);
-      row(coins, 56, 59, 12); row(coins, 60, 66, 6);
-      row(coins, 74, 79, 5); row(coins, 76, 80, 13);
-      dot(coins, 86, 10); dot(coins, 88, 8);
-      row(coins, 93, 95, 13);
-      row(coins, 114, 120, 10); row(coins, 122, 127, 12); row(coins, 129, 134, 10);
-      row(coins, 138, 141, 13);
-      row(coins, 170, 174, 7); dot(coins, 183, 7); dot(coins, 184, 7);
+      var coins = [], blocks = [];
+      /* A — the dunes */
+      blocks.push([12, 11, 1, 1, 'brick'], [13, 11, 1, 1, 'q'], [14, 11, 1, 1, 'brick'], [15, 11, 1, 1, 'p']);
+      blocks.push([22, 13, 3, 2]);
+      /* B — the boardwalk starts */
+      blocks.push([36, 12, 2, 3], [38, 9, 6, 1]);
+      /* C — plates on the sand */
+      blocks.push([56, 11, 2, 1], [58, 10, 2, 1]);
+      /* D — pier planks */
+      blocks.push([74, 12, 2, 3], [76, 9, 11, 1]);
+      /* E — the long pier with two gaps */
+      blocks.push([96, 13, 3, 2], [100, 10, 4, 1], [104, 9, 8, 1], [115, 9, 10, 1], [128, 9, 6, 1]);
+      blocks.push([100, 10, 1, 5], [111, 10, 1, 5], [124, 10, 1, 5], [133, 10, 1, 5]);
+      /* F — dune ridge */
+      blocks.push([140, 11, 4, 1], [146, 10, 4, 1], [150, 13, 2, 2]);
+      /* G — midpoint under the palms */
+      blocks.push([158, 13, 2, 2], [162, 11, 4, 1], [166, 10, 3, 1]);
+      /* H — the ferry dock */
+      blocks.push([178, 13, 3, 2], [182, 11, 3, 1], [187, 11, 2, 1]);
+      /* I — boardwalk arcade */
+      blocks.push([202, 13, 3, 2], [206, 11, 3, 1], [210, 9, 4, 1], [214, 12, 1, 3]);
+      /* J — palm decks */
+      blocks.push([224, 11, 4, 1], [229, 10, 4, 1], [234, 11, 3, 1]);
+      /* K — last pier */
+      blocks.push([246, 11, 3, 1], [252, 11, 4, 1], [257, 13, 2, 2]);
+      /* L — the lighthouse */
+      blocks.push([268, 13, 3, 2], [272, 11, 3, 1], [276, 9, 4, 1]);
+      /* M — flag steps */
+      blocks.push([283, 13, 2, 2], [285, 11, 2, 1], [287, 9, 2, 1]);
+
+      row(coins, 5, 8, 13); row(coins, 12, 15, 10);
+      row(coins, 22, 24, 12); row(coins, 38, 43, 8);
+      row(coins, 56, 59, 9);
+      row(coins, 74, 75, 10); row(coins, 76, 86, 8);
+      row(coins, 100, 103, 9); row(coins, 104, 111, 8); row(coins, 115, 124, 8); row(coins, 128, 133, 8);
+      row(coins, 140, 143, 10); row(coins, 146, 149, 9);
+      row(coins, 158, 160, 12); row(coins, 162, 165, 10);
+      row(coins, 178, 180, 12); row(coins, 182, 184, 10);
+      row(coins, 210, 213, 8);
+      row(coins, 224, 227, 10); row(coins, 229, 232, 9);
+      row(coins, 246, 248, 10); row(coins, 252, 255, 10);
+      row(coins, 276, 279, 8);
+      row(coins, 285, 288, 8);
+
       return {
-        grounds: [[0, 30], [33, 47], [53, 68], [69, 84], [90, 104], [135, 151], [156, 159]],
-        blocks: [
-          [17, 11, 1, 1, 'brick'], [18, 11, 1, 1, 'q'], [19, 11, 1, 1, 'brick'],
-          [20, 11, 1, 1, 'p'],
-          [26, 13, 2, 2], [28, 12, 2, 3],
-          [40, 11, 1, 1, 'q'], [41, 11, 1, 1, 'brick'], [42, 11, 1, 1, 'q'],
-          [56, 11, 2, 1], [58, 10, 3, 1],
-          [73, 7, 8, 1],
-          [86, 12, 2, 1], [88, 10, 2, 1],
-          [96, 12, 4, 1],
-          [98, 11, 1, 1, 'brick'], [99, 11, 1, 1, 'q'], [100, 11, 1, 1, 'brick'],
-          [113, 12, 8, 6], [121, 14, 7, 4], [128, 12, 7, 6],
-          [144, 10, 2, 1],
-          [160, 13, 3, 5], [164, 11, 3, 7], [167, 9, 2, 9]
-        ],
+        grounds: [[0, 30], [35, 50], [55, 70], [70, 92], [97, 114], [119, 135],
+                  [140, 156], [161, 177], [182, 198], [203, 219], [224, 240],
+                  [245, 261], [266, 282], [285, 299]],
+        blocks: blocks,
         coins: coins,
         enemies: [
-          { type: 'walker', skin: 'grump', tx: 16 },
-          { type: 'walker', tx: 23 },
-          { type: 'sheller', tx: 39 },
-          { type: 'walker', skin: 'grump', tx: 44 },
-          { type: 'walker', tx: 57 },
-          { type: 'walker', skin: 'grump', tx: 66 },
-          { type: 'sheller', tx: 79 },
-          { type: 'walker', tx: 98 },
-          { type: 'walker', skin: 'grump', tx: 115, ty: 11 },
-          { type: 'sheller', tx: 143 },
-          { type: 'walker', tx: 181, ty: 8 }
+          { type: 'walker', skin: 'grump', tx: 14 },
+          { type: 'walker', tx: 20 },
+          { type: 'sheller', tx: 28 },
+          { type: 'walker', skin: 'grump', tx: 40, ty: 9 },
+          { type: 'walker', tx: 46 },
+          { type: 'walker', skin: 'grump', tx: 58 },
+          { type: 'sheller', tx: 66 },
+          { type: 'walker', tx: 82, ty: 9 },
+          { type: 'walker', skin: 'grump', tx: 106, ty: 9 },
+          { type: 'walker', tx: 120, ty: 9 },
+          { type: 'sheller', tx: 131, ty: 9 },
+          { type: 'walker', skin: 'grump', tx: 143, ty: 12 },
+          { type: 'walker', tx: 152 },
+          { type: 'walker', skin: 'grump', tx: 168, ty: 10 },
+          { type: 'sheller', tx: 175 },
+          { type: 'walker', skin: 'grump', tx: 190 },
+          { type: 'walker', tx: 196 },
+          { type: 'walker', skin: 'grump', tx: 212, ty: 9 },
+          { type: 'walker', tx: 220 },
+          { type: 'sheller', tx: 231, ty: 10 },
+          { type: 'walker', skin: 'grump', tx: 238 },
+          { type: 'walker', tx: 254, ty: 11 },
+          { type: 'walker', skin: 'grump', tx: 264 },
+          { type: 'walker', tx: 274, ty: 9 },
+          { type: 'walker', tx: 281 }
+        ],
+        foods: [
+          { type: 'baklava', tx: 64, ty: 12 },
+          { type: 'lahmacun', tx: 187, ty: 10 },
+          { type: 'sujuk', tx: 145, ty: 9 },
+          { type: 'baklava', tx: 230, ty: 9 },
+          { type: 'ayran', tx: 256, ty: 13 }
         ],
         platforms: [
-          [47 * TILE, 13 * TILE, 48, 8, 'x', 47 * TILE, 51 * TILE, 0.7],
-          [104 * TILE, 13 * TILE, 56, 8, 'x', 104 * TILE, 109 * TILE, 0.9],
-          [151 * TILE, 13 * TILE, 48, 8, 'x', 151 * TILE, 154 * TILE, 0.7]
+          [51 * TILE, 13 * TILE, 48, 8, 'x', 51 * TILE, 54 * TILE, 0.7],
+          [220 * TILE, 13 * TILE, 48, 8, 'x', 220 * TILE, 221 * TILE, 0.65],
+          [137 * TILE, 13 * TILE, 48, 8, 'x', 137 * TILE, 138 * TILE, 0.7],
+          [242 * TILE, 13 * TILE, 48, 8, 'x', 242 * TILE, 245 * TILE, 0.6]
         ]
       };
     }
@@ -253,6 +486,53 @@
   /* ------------------------------------------------------------------ */
   /* Level construction                                                  */
   /* ------------------------------------------------------------------ */
+  /* A food is a 14px pickup with a little air around it. Hand placement is
+   * easy to get subtly wrong — two snacks in the same pocket read as one
+   * stubborn item, and one hovering over a critter's head looks like a hat.
+   * Nudge a colliding food to the nearest clear tile instead of shipping the
+   * overlap; the types of the stage never change, only where one sits. */
+  function resolveFoods(list, g, enemies) {
+    var F = 14, PAD = 8;
+    function free(x, y, placed) {
+      if (x < TILE || y < TILE) return false;
+      if (x + F > (LEVEL_W - 1) * TILE || y + F > (LEVEL_H - 2) * TILE) return false;
+      var x0 = Math.floor(x / TILE), x1 = Math.floor((x + F - 1) / TILE);
+      var y0 = Math.floor(y / TILE), y1 = Math.floor((y + F - 1) / TILE);
+      for (var ty = y0; ty <= y1; ty++) {
+        for (var tx = x0; tx <= x1; tx++) {
+          if (g[ty * LEVEL_W + tx]) return false;   // never buried in terrain
+        }
+      }
+      for (var i = 0; i < placed.length; i++) {
+        var p = placed[i];
+        if (Math.abs(p.x - x) < F + PAD && Math.abs(p.y - y) < F + PAD) return false;
+      }
+      for (var e = 0; e < enemies.length; e++) {
+        var en = enemies[e];
+        if (x < en.x + en.w + PAD && x + F + PAD > en.x &&
+            y < en.y + en.h + PAD && y + F + PAD > en.y) return false;
+      }
+      return true;
+    }
+    /* prefer straight up: a snack one tile higher still reads as floating on
+     * that spot, while a sideways nudge can land it over a pit */
+    var offsets = [[0, 0], [0, -1], [0, -2], [2, 0], [-2, 0], [3, 0], [-3, 0],
+      [0, -3], [4, 0], [-4, 0], [0, 1], [0, -4], [5, 0], [-5, 0]];
+    var placed = [];
+    for (var i = 0; i < list.length; i++) {
+      var f = list[i], ok = false;
+      for (var k = 0; k < offsets.length; k++) {
+        var nx = f.x + offsets[k][0] * TILE;
+        var ny = f.y + offsets[k][1] * TILE;
+        if (!free(nx, ny, placed)) continue;
+        f.x = nx; f.y = ny; ok = true; break;
+      }
+      /* if nothing fits, leave it alone rather than drop a pickup */
+      if (ok) placed.push(f);
+    }
+    return list;
+  }
+
   function buildLevel(stage) {
     var g = new Uint8Array(LEVEL_W * LEVEL_H);
     function rect(tx, ty, w, h, v) {
@@ -270,35 +550,42 @@
     }
     /* the gate tower and the goal plateau are shared anchors, not
      * per-stage terrain: the switch/gate rule and the goal test need them */
-    rect(70, 9, 1, 6, T.GATE);
-    rect(169, 9, LEVEL_W - 169, 9, T.SOLID);
+    rect(GATE_TX, 9, 1, 6, T.GATE);
+    rect(GOAL_TX, 9, LEVEL_W - GOAL_TX, 9, T.SOLID);
     var coins = plan.coins.map(function (c) {
       return { x: c[0] * TILE + 3, y: c[1] * TILE + 3, taken: false };
     });
+    /* Critters are people-sized now: a themed pedestrian stands 20px, the
+     * plain walker and the sheller 18px, against the buddies' 22px. */
     var enemies = plan.enemies.map(function (e) {
-      var tall = e.type === 'sheller' || !!e.skin;
+      var h = e.type === 'walker' && !e.skin ? 18 : e.skin ? 20 : 18;
       return {
         type: e.type, skin: e.skin || '',
         x: e.tx * TILE + 1, y: (e.ty != null ? e.ty : 13) * TILE,
-        w: 14, h: tall ? 14 : 12,
+        w: 13, h: h, baseH: h,
         vx: -0.45, vy: 0, dir: -1, state: 'walk', timer: 0, dead: false, onGround: false
       };
     });
     return {
       w: LEVEL_W, h: LEVEL_H, tiles: g, stage: pick,
       coins: coins, enemies: enemies,
+      /* authored positions; createGame() runs resolveFoods() after the
+       * critters settle, so the shipped game never shows two in one pocket */
+      foods: (plan.foods || []).map(function (f) {
+        return { type: f.type, x: f.tx * TILE + 1, y: f.ty * TILE, w: 14, h: 14, taken: false };
+      }),
       switches: [
         { tx: 63, ty: 14, pressed: false },
         { tx: 66, ty: 14, pressed: false }
       ],
-      gateTx: 70,
+      gateTx: GATE_TX,
       platforms: plan.platforms.map(function (p) {
         return {
           x: p[0], y: p[1], w: p[2], h: p[3], axis: p[4], min: p[5], max: p[6],
           speed: p[7], dir: 1, dx: 0, dy: 0
         };
       }),
-      midpointTx: 92, goalTx: 176, goalTopTy: 9
+      midpointTx: MID_TX, goalTx: GOAL_TX, goalTopTy: 9
     };
   }
 
@@ -310,7 +597,8 @@
       slot: slot, color: color,
       x: tx * TILE + 2, y: 13 * TILE, w: 12, h: 22,
       vx: 0, vy: 0, face: 1, onGround: false, coyote: 0, jbuf: 0, jumpHeld: false,
-      hp: 1, big: false, state: 'play', invuln: 0, stateT: 0, squash: 0,
+      hp: MAX_HEARTS, maxHp: MAX_HEARTS, big: false, star: 0,
+      state: 'play', invuln: 0, stateT: 0, squash: 0,
       onPartner: false, onPlatform: null, skid: false, animT: 0, absent: false,
       safeY: 13 * TILE, bubbleX: null, bubbleY: null, carry: false
     };
@@ -341,7 +629,7 @@
       midpointTx: level.midpointTx, goalTx: level.goalTx, goalTopTy: level.goalTopTy,
       midReached: false, checkpoint: { x: 2 * TILE, y: 13 * TILE },
       players: players,
-      berries: [], coinCount: 0, score: 0,
+      foods: level.foods, berries: [], coinCount: 0, score: 0,
       lives: 3, gameOver: false, respawnAt: 0,
       timeLeft: 300 * 60, finished: false, finishTick: 0,
       runTicks: 0,
@@ -350,6 +638,10 @@
     };
     /* settle authored spawns once so tick 0 is already clear of terrain */
     for (var ei = 0; ei < st.enemies.length; ei++) unbury(st, st.enemies[ei]);
+    /* ...and only then keep the snacks apart: unbury() can lift a critter onto
+     * the very tile a food was authored above, which is exactly the overlap
+     * the player sees on screen. Resolving last means it is never possible. */
+    resolveFoods(st.foods, st.tiles, st.enemies);
     return st;
   }
 
@@ -469,7 +761,7 @@
     }
     if (partnerDown || !hasPartner(st, p)) { loseLife(st); return; }
     p.state = 'bubble'; p.stateT = 0; p.vx = 0; p.vy = 0;
-    p.big = false; p.hp = 1; p.stuck = 0; p.onPartner = false; p.onPlatform = null;
+    p.big = false; p.hp = MAX_HEARTS; p.star = 0; p.stuck = 0; p.onPartner = false; p.onPlatform = null;
     /* It hovers where they went down, lifted clear of the floor, and stays
      * there. It must NOT drift into the partner on its own: the rescue has
      * to be a deliberate touch, and the bubble is a real state the team can
@@ -524,7 +816,8 @@
       var p = st.players[i];
       if (p.absent) continue;
       p.state = 'ko'; p.stateT = 0; p.vx = 0; p.vy = 0;
-      p.hp = 1; p.big = false; p.onPartner = false; p.onPlatform = null; p.stuck = 0;
+      p.hp = MAX_HEARTS; p.big = false; p.star = 0;
+      p.onPartner = false; p.onPlatform = null; p.stuck = 0;
       p.bubbleX = p.bubbleY = null; p.carry = false;
       /* pop out of view where they last stood, so a pit death doesn't
        * animate invisibly under the level */
@@ -544,7 +837,7 @@
     for (var i = 0; i < st.players.length; i++) {
       var p = st.players[i];
       if (p.absent) continue;
-      p.state = 'play'; p.hp = 1; p.big = false; p.invuln = 140;
+      p.state = 'play'; p.hp = MAX_HEARTS; p.big = false; p.star = 0; p.invuln = 140;
       p.stateT = 0; p.stuck = 0; p.onPartner = false; p.onPlatform = null;
       p.bubbleX = p.bubbleY = null; p.carry = false;
       safePlace(st, p, st.checkpoint.x + i * 26, st.checkpoint.y - 10);
@@ -557,13 +850,34 @@
   }
 
   function hurtPlayer(st, p, fromX) {
-    if (p.state !== 'play' || p.invuln > 0) return;
-    if (p.big) {
-      p.big = false; p.hp = 1; p.invuln = 130;
+    if (p.state !== 'play' || p.invuln > 0 || p.star > 0) return;
+    if (p.hp > 1) {
+      p.hp--; p.invuln = 130;
       p.vx = (p.x + p.w / 2 < fromX ? -1.6 : 1.6); p.vy = -3.4;
-      ev(st, 'shrink');
+      ev(st, 'hurt');
     } else {
       downPlayer(st, p);
+    }
+  }
+
+  /* One-way deck collision for the moving platforms. Landings are swept
+   * from the feet position before this step, so a fast fall cannot tunnel
+   * through a deck, and a deck that rises into a buddy lifts them instead
+   * of passing through them. */
+  function landOnPlatforms(st, p, beforeBottom) {
+    if (p.absent || p.state !== 'play') return;
+    for (var i = 0; i < st.platforms.length; i++) {
+      var pl = st.platforms[i];
+      if (p.x + p.w <= pl.x + 2 || p.x >= pl.x + pl.w - 2) continue;
+      var feet = p.y + p.h;
+      if (pl.dy < 0 && feet > pl.y && feet < pl.y + 18 && p.vy >= -0.01) {
+        p.y = pl.y - p.h; p.vy = 0; p.onGround = true; p.onPlatform = pl;
+        continue;
+      }
+      var drop = Math.max(24, Math.abs(p.vy) + 6);
+      if (p.vy >= 0 && beforeBottom <= pl.y + 4 && feet >= pl.y && feet <= pl.y + drop) {
+        p.y = pl.y - p.h; p.vy = 0; p.onGround = true; p.onPlatform = pl;
+      }
     }
   }
 
@@ -572,6 +886,7 @@
     p.animT++;
     if (p.invuln > 0) p.invuln--;
     if (p.squash > 0) p.squash--;
+    if (p.star > 0) p.star--;
 
     if (p.state === 'bubble') {
       p.stateT++;
@@ -588,7 +903,7 @@
           p.x += (dx / dist) * spd + Math.sin(p.stateT * 0.16) * 0.2;
           p.y += (dy / dist) * spd + Math.cos(p.stateT * 0.13) * 0.2;
           if (dist < 26) {
-            p.state = 'play'; p.carry = false; p.invuln = 140; p.vx = 0; p.vy = 0;
+            p.state = 'play'; p.carry = false; p.invuln = 140; p.hp = MAX_HEARTS; p.vx = 0; p.vy = 0;
             safePlace(st, p, host.x - p.w / 2, host.y);
             ev(st, 'pop');
           }
@@ -605,12 +920,12 @@
       p.y += (p.bubbleY - cy) * 0.06 + Math.cos(p.stateT * 0.05) * 0.2;
       // the partner pops it by jumping into it
       if (partner && !partner.absent && partner.state === 'play' && p.stateT > 18 && overlap(p, partner)) {
-        p.state = 'play'; p.carry = false; p.invuln = 130; p.vy = 0; p.vx = 0;
+        p.state = 'play'; p.carry = false; p.invuln = 130; p.hp = MAX_HEARTS; p.vy = 0; p.vx = 0;
         safePlace(st, p, partner.x, partner.y - p.h - 1);
         ev(st, 'pop');
       } else if ((!partner || partner.absent || partner.state !== 'play') && p.stateT > 420) {
         // nobody left to rescue them: back to the checkpoint
-        p.state = 'play'; p.invuln = 130;
+        p.state = 'play'; p.invuln = 130; p.hp = MAX_HEARTS;
         safePlace(st, p, st.checkpoint.x, st.checkpoint.y);
         p.bubbleX = p.bubbleY = null;
         ev(st, 'pop');
@@ -620,7 +935,15 @@
     p.bubbleX = p.bubbleY = null;
 
     /* --- platform carry --- */
-    if (p.onPlatform) { p.x += p.onPlatform.dx; p.y += p.onPlatform.dy; }
+    if (p.onPlatform) {
+      /* A deck slides its rider along, but it must never push them into a
+       * wall: burying the body there used to trip the anti-burial rescue, */
+      /* which popped the buddy up through the bricks. */
+      var carriedX = p.x + p.onPlatform.dx;
+      if (!blockedBox(st, carriedX, p.y + p.onPlatform.dy, p.w, p.h)) {
+        p.x = carriedX; p.y += p.onPlatform.dy;
+      }
+    }
     p.onPlatform = null;
 
     /* --- partner carry (standing on head) --- */
@@ -664,6 +987,7 @@
     if (p.vy > 7.5) p.vy = 7.5;
 
     var wasGround = p.onGround;
+    var beforeBottom = p.y + p.h;
     var bumped = moveCollide(st, p, true);
     if (bumped) bumpTile(st, p, bumped);
     if (p.onGround && !wasGround && p._fallV > 4) ev(st, 'land');
@@ -677,15 +1001,8 @@
       if (p.stuck > 6) { safePlace(st, p, p.x, p.y - 1); p.stuck = 0; }
     } else p.stuck = 0;
 
-    /* --- moving platforms: land on top --- */
-    for (var i = 0; i < st.platforms.length; i++) {
-      var pl = st.platforms[i];
-      var prevBottom = p.y + p.h - p.vy;
-      if (p.vy >= 0 && p.x + p.w > pl.x + 2 && p.x < pl.x + pl.w - 2 &&
-          prevBottom <= pl.y + 6 && p.y + p.h >= pl.y && p.y + p.h <= pl.y + 14) {
-        p.y = pl.y - p.h; p.vy = 0; p.onGround = true; p.onPlatform = pl;
-      }
-    }
+    /* --- moving platforms: land on the deck --- */
+    landOnPlatforms(st, p, beforeBottom);
 
     /* --- pit fall --- */
     if (p.y > st.levelH * TILE + 24) { downPlayer(st, p); return; }
@@ -697,13 +1014,28 @@
         c.taken = true; st.coinCount++; st.score += 50; ev(st, 'coin');
       }
     }
-    /* --- berries (growth) --- */
+    /* --- berries (growth + one star) --- */
     for (var bi = st.berries.length - 1; bi >= 0; bi--) {
       var b = st.berries[bi];
       if (overlap(p, b)) {
-        p.big = true; p.hp = 2; st.score += 500; ev(st, 'power');
+        p.big = true; p.hp = Math.min(MAX_HEARTS, p.hp + 1);
+        st.score += 500; ev(st, 'power');
         st.berries.splice(bi, 1);
       }
+    }
+    /* --- voxel food --- */
+    for (var fi = 0; fi < st.foods.length; fi++) {
+      var f = st.foods[fi];
+      if (f.taken) continue;
+      if (!overlap(p, { x: f.x, y: f.y, w: 14, h: 14 })) continue;
+      var def = FOODS[f.type] || FOODS.baklava;
+      f.taken = true;
+      st.score += def.score;
+      if (def.heal) p.hp = Math.min(MAX_HEARTS, p.hp + def.heal);
+      if (def.life) st.lives = Math.min(99, st.lives + def.life);
+      if (def.star) { p.star = def.star; p.invuln = Math.max(p.invuln, 2); }
+      if (f.type === 'lahmacun') p.big = true;
+      ev(st, 'food');
     }
     /* --- midpoint + goal --- */
     if (!st.midReached && p.x > st.midpointTx * TILE) {
@@ -744,7 +1076,9 @@
       e.vx = 0;
       e.vy += 0.4; if (e.vy > 7) e.vy = 7;
       moveCollide(st, e, false);
-      if (e.timer > 480) { e.state = 'walk'; e.h = e.type === 'walker' ? 12 : 14; }
+      if (e.timer > 480) {
+        e.state = 'walk'; e.h = e.baseH || (e.skin ? 20 : 18); e.y -= (e.h - 12);
+      }
       return;
     }
     if (e.state === 'slide') {
@@ -792,6 +1126,11 @@
       for (var j = 0; j < st.enemies.length; j++) {
         var e = st.enemies[j];
         if (e.dead || !overlap(p, e)) continue;
+        /* sujuk: touch anything and it is out, no stomp needed */
+        if (p.star > 0) {
+          e.dead = true; st.score += 200; ev(st, 'starhit');
+          continue;
+        }
         var stomp = p.vy > 0.4 && (p.y + p.h - e.y) < e.h * 0.65;
         if (e.state === 'shell') {
           // kick it away from the player
@@ -802,7 +1141,10 @@
         } else if (stomp) {
           if (e.state === 'slide') { e.state = 'shell'; e.timer = 0; e.vx = 0; }
           else if (e.type === 'walker') { e.dead = true; st.score += 100; }
-          else { e.state = 'shell'; e.timer = 0; e.h = 10; e.y += 4; }
+          else {
+            e.state = 'shell'; e.timer = 0;
+            e.y += e.h - 12; e.h = 12;                 // bottom stays put
+          }
           p.vy = p.jumpHeld ? -7.4 : -4.8;
           ev(st, 'stomp');
         } else if (e.state !== 'slide') {
@@ -971,8 +1313,11 @@
       switches: st.switches.map(function (s) { return s.pressed ? 1 : 0; }),
       players: st.players.map(function (p) {
         return [round1(p.x), round1(p.y), round1(p.vx), round1(p.vy), p.face,
-                p.big ? 1 : 0, p.state, p.invuln > 0 ? 1 : 0, p.squash > 0 ? 1 : 0, p.absent ? 1 : 0, p.skid ? 1 : 0];
+                p.big ? 1 : 0, p.state, p.invuln > 0 ? 1 : 0, p.squash > 0 ? 1 : 0, p.absent ? 1 : 0, p.skid ? 1 : 0,
+                p.hp, p.star > 0 ? 1 : 0];
       }),
+      star: st.players.map(function (p) { return p.star > 0 ? 1 : 0; }),
+      foodsTaken: st.foods.map(function (f) { return f.taken ? '1' : '0'; }).join(''),
       enemies: st.enemies.map(function (e) {
         return [round1(e.x), round1(e.y), e.state, e.dir, e.dead ? 1 : 0];
       }),
@@ -996,6 +1341,8 @@
       p.x = a[0]; p.y = a[1]; p.vx = a[2]; p.vy = a[3]; p.face = a[4];
       p.big = !!a[5]; p.state = a[6]; p.invuln = a[7] ? 10 : 0; p.squash = a[8] ? 5 : 0;
       p.absent = !!a[9]; p.skid = !!a[10]; p.animT++;
+      if (typeof a[11] === 'number') p.hp = a[11];
+      if (typeof a[12] === 'number') p.star = a[12] ? 60 : 0;
     });
     s.enemies.forEach(function (a, i) {
       var e = st.enemies[i]; if (!e) return;
@@ -1010,6 +1357,11 @@
     });
     for (var i = 0; i < st.coinsArr.length; i++) {
       st.coinsArr[i].taken = s.coinsTaken.charAt(i) === '1';
+    }
+    if (typeof s.foodsTaken === 'string') {
+      for (var fi = 0; fi < st.foods.length; fi++) {
+        st.foods[fi].taken = s.foodsTaken.charAt(fi) === '1';
+      }
     }
     st.tiles.set(st.baseTiles);
     st.tileDiff = {};

@@ -28,27 +28,35 @@ function findPlayer(st, color) {
 var STAGES = ['izmir', 'nyc', 'istanbul', 'tampa'];
 var lvl = E.buildLevel();
 ok('the default level is the İzmir one', lvl.stage === 'izmir' && E.buildLevel('nope').stage === 'izmir');
-ok('every stage is 200 x 18', STAGES.every(function (id) {
+ok('every stage is 300 x 18', STAGES.every(function (id) {
   var l2 = E.buildLevel(id);
-  return l2.w === 200 && l2.h === 18;
+  return l2.w === 300 && l2.h === 18;
 }));
-ok('every stage has 3 moving platforms', STAGES.every(function (id) { return E.buildLevel(id).platforms.length === 3; }));
+ok('every stage has 4-5 moving platforms', STAGES.every(function (id) {
+  var n = E.buildLevel(id).platforms.length;
+  return n >= 4 && n <= 5;
+}), STAGES.map(function (id) { return E.buildLevel(id).platforms.length; }));
 ok('every stage keeps 2 floor plates and the gate at x=70', STAGES.every(function (id) {
   var l2 = E.buildLevel(id);
   return l2.switches.length === 2 && l2.gateTx === 70 && l2.switches[0].tx === 63 && l2.switches[1].tx === 66;
 }));
 ok('every stage keeps the midpoint and goal anchors', STAGES.every(function (id) {
   var l2 = E.buildLevel(id);
-  return l2.midpointTx === 92 && l2.goalTx === 176 && l2.goalTopTy === 9;
+  return l2.midpointTx === 160 && l2.goalTx === 289 && l2.goalTopTy === 9;
 }));
-ok('every stage carries 50-85 bananas', STAGES.every(function (id) {
+ok('every stage carries 100-170 bananas', STAGES.every(function (id) {
   var n = E.buildLevel(id).coins.length;
-  return n >= 50 && n <= 85;
+  return n >= 100 && n <= 170;
 }), STAGES.map(function (id) { return E.buildLevel(id).coins.length; }));
-ok('every stage has 8-12 critters', STAGES.every(function (id) {
+ok('every stage has 20-30 critters spread over the course', STAGES.every(function (id) {
   var n = E.buildLevel(id).enemies.length;
-  return n >= 8 && n <= 12;
+  return n >= 20 && n <= 30;
 }), STAGES.map(function (id) { return E.buildLevel(id).enemies.length; }));
+ok('every stage carries all four foods', STAGES.every(function (id) {
+  var t = E.buildLevel(id).foods.map(function (f) { return f.type; });
+  return t.indexOf('lahmacun') >= 0 && t.indexOf('baklava') >= 0 &&
+         t.indexOf('ayran') >= 0 && t.indexOf('sujuk') >= 0;
+}), STAGES.map(function (id) { return E.buildLevel(id).foods.map(function (f) { return f.type; }).join(','); }));
 var layouts = STAGES.map(function (id) { return JSON.stringify(E.buildLevel(id).tiles); });
 ok('no two stages share a terrain', new Set(layouts).size === 4);
 ok('the gate tower really blocks the walkway on every stage', STAGES.every(function (id) {
@@ -84,8 +92,11 @@ ok('each stage has themed, plain and shell critters', STAGES.every(function (id)
   var skins = es.map(function (e) { return e.skin || e.type; });
   return skins.indexOf(THEME[id]) >= 0 && skins.indexOf('walker') >= 0 && skins.indexOf('sheller') >= 0;
 }), STAGES.map(function (id) { return E.buildLevel(id).enemies.map(function (e) { return e.skin || e.type; }).join(','); }));
-ok('themed pedestrians are tall enough to read as people', STAGES.every(function (id) {
-  return E.buildLevel(id).enemies.every(function (e) { return !e.skin || e.h === 14; });
+ok('themed pedestrians stand about as tall as a buddy', STAGES.every(function (id) {
+  return E.buildLevel(id).enemies.every(function (e) { return !e.skin || e.h === 20; });
+}));
+ok('plain critters are close to buddy height too', STAGES.every(function (id) {
+  return E.buildLevel(id).enemies.every(function (e) { return e.skin || e.h === 18; });
 }));
 
 /* ---- run / skid / jump basics ---- */
@@ -97,9 +108,14 @@ ok('player settles on the ground', Math.abs(p.y - 218) < 1.5, { y: p.y });
 var x0 = p.x;
 stepN(st, 60, [{ l: false, r: true, u: false, d: false, run: false }, E.EMPTY_INPUT]);
 ok('holds right without running', p.x > x0 + 30, { x0: x0, x: p.x });
-var x1 = p.x;
-stepN(st, 60, [{ l: false, r: true, u: false, d: false, run: true }, E.EMPTY_INPUT]);
-ok('run is faster', p.x - x1 > 90, { moved: p.x - x1 });
+var stR2 = game();
+stR2.enemies.length = 0;
+var pR2 = findPlayer(stR2, 'red');
+pR2.x = 4 * TILE;
+stepN(stR2, 10);
+var x1 = pR2.x;
+stepN(stR2, 50, [{ l: false, r: true, u: false, d: false, run: true }, E.EMPTY_INPUT]);
+ok('run is faster', pR2.x - x1 > 90, { moved: pR2.x - x1 });
 
 var st2 = game();
 st2.enemies.length = 0;
@@ -165,20 +181,26 @@ st7.berries.push({ x: p7.x, y: p7.y + 4, w: 14, h: 12, vx: 0, vy: 0 });
 E.step(st7, [E.EMPTY_INPUT, E.EMPTY_INPUT]);
 ok('spread jar grants a power state', p7.big === true, { big: p7.big });
 p7.invuln = 0;
-st7.enemies.push({ type: 'walker', x: p7.x, y: p7.y, w: 14, h: 12, vx: 0, vy: 0, dir: 1, state: 'walk', timer: 0, dead: false, onGround: true });
+st7.enemies.push({ type: 'walker', x: p7.x, y: p7.y, w: 13, h: 18, vx: 0, vy: 0, dir: 1, state: 'walk', timer: 0, dead: false, onGround: true });
 E.step(st7, [E.EMPTY_INPUT, E.EMPTY_INPUT]);
-ok('a hit drops the power state instead of knocking out', p7.big === false && p7.state === 'play', { big: p7.big, state: p7.state });
+ok('a hit costs one of the three stars, not the run', p7.hp === 2 && p7.state === 'play', { hp: p7.hp, state: p7.state });
+p7.invuln = 0; p7.x = st7.enemies[0].x + 2; p7.y = st7.enemies[0].y;
+E.step(st7, [E.EMPTY_INPUT, E.EMPTY_INPUT]);
+ok('the second hit costs another star', p7.hp === 1 && p7.state === 'play', { hp: p7.hp });
+p7.invuln = 0; p7.x = st7.enemies[0].x + 2; p7.y = st7.enemies[0].y;
+E.step(st7, [E.EMPTY_INPUT, E.EMPTY_INPUT]);
+ok('the third hit knocks a buddy down', p7.state === 'ko' && st7.lives === 2, { state: p7.state, lives: st7.lives });
 
 /* ---- checkpoint + goal ---- */
 var st8 = game();
 var p8 = findPlayer(st8, 'red');
-st8.camX = 1300;
-p8.x = 92 * TILE + 20; p8.y = 218;
+st8.camX = 2400;
+p8.x = 160 * TILE + 20; p8.y = 218;
 E.step(st8, [E.EMPTY_INPUT, E.EMPTY_INPUT]);
-ok('midpoint sets the checkpoint', st8.midReached === true && st8.checkpoint.x === 92 * TILE);
+ok('midpoint sets the checkpoint', st8.midReached === true && st8.checkpoint.x === 160 * TILE);
 
-st8.camX = 2600;
-p8.x = 176 * TILE + 4; p8.y = 9 * TILE - 30;
+st8.camX = 4400;
+p8.x = 289 * TILE + 4; p8.y = 9 * TILE - 30;
 E.step(st8, [E.EMPTY_INPUT, E.EMPTY_INPUT]);
 ok('crossing the goal finishes the stage', st8.finished === true);
 ok('finishing awards 1000', st8.score >= 1000);
@@ -281,9 +303,16 @@ h0.x = 100; h0.y = 218; h0.invuln = 0; h0.vy = 0;
 stH.enemies[0].x = h0.x + 2; stH.enemies[0].y = h0.y + 6;
 stH.enemies[0].state = 'walk'; stH.enemies[0].vy = 0; stH.enemies[0].dead = false;
 E.step(stH, [E.EMPTY_INPUT, E.EMPTY_INPUT]);
+ok('a hit on the last star costs a life in solo', h0.hp === 2 && h0.state === 'play' && stH.lives === 3,
+   { hp: h0.hp, lives: stH.lives, state: h0.state });
+h0.hp = 1; h0.invuln = 0;
+h0.x = 100; h0.y = 218;
+stH.enemies[0].x = h0.x + 2; stH.enemies[0].y = h0.y + 6;
+E.step(stH, [E.EMPTY_INPUT, E.EMPTY_INPUT]);
 ok('solo enemy hit costs a life, never a bubble', stH.lives === 2 && h0.state === 'ko', { lives: stH.lives, state: h0.state });
 stepN(stH, 50);
 ok('solo comes back from a hit at the checkpoint', h0.state === 'play' && stH.lives === 2, { state: h0.state });
+ok('the respawn refills all three stars', h0.hp === 3, { hp: h0.hp });
 
 /* ---- snapshots carry lives and game over ---- */
 var hostL = game({ mode: 'host', twoPlayer: true });
@@ -362,7 +391,7 @@ function terrainSolid(l2, x, y) {
   if (v === E.T.GATE) return false;      // the plates open it, so it is not a wall
   return v !== E.T.EMPTY;
 }
-function goalReachable(id) {
+function flood(id) {
   var l2 = E.buildLevel(id);
   var W = l2.w, H = l2.h;
   var nodes = new Map();
@@ -387,12 +416,13 @@ function goalReachable(id) {
     }
   });
   var start = nodes.get('3,14');
-  if (!start) return false;
+  if (!start) return { ok: false, seen: new Set(), lvl: l2 };
   var seen = new Set(['3,14']);
   var q = [start];
+  var reachedGoal = false;
   while (q.length) {
     var n = q.shift();
-    if (n.x >= 175 && n.y <= 9) return true;
+    if (n.x >= 288 && n.y <= 9) reachedGoal = true;
     var out = [];
     [-1, 1].forEach(function (dx) {
       for (var y = n.y - 1; y < n.y + 3; y++) {
@@ -423,11 +453,62 @@ function goalReachable(id) {
       seen.add(kk); q.push(m);
     });
   }
-  return false;
+  return { ok: reachedGoal, seen: seen, lvl: l2 };
 }
+var floods = {};
 STAGES.forEach(function (id) {
-  ok('stage ' + id + ' can be walked from spawn to goal', goalReachable(id));
+  floods[id] = flood(id);
+  ok('stage ' + id + ' can be walked from spawn to goal', floods[id].ok);
 });
+/* The spacing pass may nudge a snack a tile or two; it must never nudge it
+ * out of the playable route. Every food has to sit within one jump of a
+ * tile the flood fill actually reaches. */
+ok('every food sits within a jump of the route', STAGES.every(function (id) {
+  var seen = floods[id].seen;
+  return game({ stage: id }).foods.every(function (f) {
+    var fx = Math.floor((f.x + f.w / 2) / TILE), fy = Math.floor((f.y + f.h / 2) / TILE);
+    var hit = false;
+    seen.forEach(function (k) {
+      var p = k.split(','), dx = Math.abs(+p[0] - fx), dy = Math.abs(+p[1] - fy);
+      if (dx <= 3 && dy <= 5) hit = true;
+    });
+    return hit;
+  });
+}), STAGES.map(function (id) {
+  var seen = floods[id].seen, far = [];
+  game({ stage: id }).foods.forEach(function (f) {
+    var fx = Math.floor((f.x + f.w / 2) / TILE), fy = Math.floor((f.y + f.h / 2) / TILE);
+    var hit = false;
+    seen.forEach(function (k) {
+      var p = k.split(',');
+      if (Math.abs(+p[0] - fx) <= 3 && Math.abs(+p[1] - fy) <= 5) hit = true;
+    });
+    if (!hit) far.push(f.type + '@' + fx + ',' + fy);
+  });
+  return far;
+}));
+/* long courses should offer a genuine upper route, not one low corridor */
+STAGES.forEach(function (id) {
+  var high = 0, mid = 0, late = 0;
+  floods[id].seen.forEach(function (k) {
+    var xy = k.split(','), x = +xy[0], y = +xy[1];
+    if (y <= 10) high++;
+    if (y === 12) mid++;
+    if (x > 150) late++;
+  });
+  ok('stage ' + id + ' has a usable upper route', high >= 50, { high: high });
+  ok('stage ' + id + ' keeps mid-height ledges reachable', mid >= 4, { mid: mid });
+  ok('stage ' + id + ' opens up in its second half too', late > 40, { late: late });
+});
+ok('no reachable spot has a low ceiling', STAGES.every(function (id) {
+  var l2 = floods[id].lvl;
+  var bad = 0;
+  floods[id].seen.forEach(function (k) {
+    var xy = k.split(','), x = +xy[0], y = +xy[1];
+    if (y - 2 >= 0 && terrainSolid(l2, x, y - 2)) bad++;
+  });
+  return bad === 0;
+}));
 
 /* ---- the run clock used by the summary ---- */
 var stR = game();
@@ -611,12 +692,72 @@ ok('nothing starts buried on any of the four stages', STAGES.every(function (id)
   var g3 = game({ stage: id });
   return g3.enemies.every(function (e) { return !inTerrain(g3, e); });
 }));
+ok('no banana spawns inside terrain', STAGES.every(function (id) {
+  var g3 = game({ stage: id });
+  return g3.coinsArr.every(function (c) {
+    return !inTerrain(g3, { x: c.x, y: c.y, w: 10, h: 10 });
+  });
+}), STAGES.map(function (id) {
+  var g3 = game({ stage: id });
+  return g3.coinsArr.filter(function (c) { return inTerrain(g3, { x: c.x, y: c.y, w: 10, h: 10 }); }).length;
+}));
+ok('no food spawns inside terrain', STAGES.every(function (id) {
+  var g3 = game({ stage: id });
+  return g3.foods.every(function (f) { return !inTerrain(g3, f); });
+}), STAGES.map(function (id) {
+  var g3 = game({ stage: id });
+  return g3.foods.filter(function (f) { return inTerrain(g3, f); }).length;
+}));
+ok('no two foods share a pocket on any stage', STAGES.every(function (id) {
+  var g3 = game({ stage: id });
+  for (var i = 0; i < g3.foods.length; i++) {
+    for (var j = i + 1; j < g3.foods.length; j++) {
+      var a = g3.foods[i], b = g3.foods[j];
+      if (Math.abs(a.x - b.x) < 20 && Math.abs(a.y - b.y) < 20) return false;
+    }
+  }
+  return true;
+}), STAGES.map(function (id) {
+  var g3 = game({ stage: id }), hits = [];
+  for (var i = 0; i < g3.foods.length; i++) {
+    for (var j = i + 1; j < g3.foods.length; j++) {
+      var a = g3.foods[i], b = g3.foods[j];
+      if (Math.abs(a.x - b.x) < 20 && Math.abs(a.y - b.y) < 20) hits.push(a.type + '/' + b.type);
+    }
+  }
+  return hits;
+}));
+ok('no food hovers inside a critter', STAGES.every(function (id) {
+  var g3 = game({ stage: id });
+  return g3.foods.every(function (f) {
+    return g3.enemies.every(function (e) {
+      return !(f.x < e.x + e.w + 8 && f.x + f.w + 8 > e.x &&
+               f.y < e.y + e.h + 8 && f.y + f.h + 8 > e.y);
+    });
+  });
+}), STAGES.map(function (id) {
+  var g3 = game({ stage: id }), hits = [];
+  g3.foods.forEach(function (f) {
+    g3.enemies.forEach(function (e) {
+      if (f.x < e.x + e.w + 8 && f.x + f.w + 8 > e.x &&
+          f.y < e.y + e.h + 8 && f.y + f.h + 8 > e.y) hits.push(f.type + '@' + Math.round(f.x / TILE) + '/' + e.type);
+    });
+  });
+  return hits;
+}));
+ok('every food type still appears after the spacing pass', STAGES.every(function (id) {
+  var t = game({ stage: id }).foods.map(function (f) { return f.type; });
+  return t.indexOf('lahmacun') >= 0 && t.indexOf('baklava') >= 0 &&
+         t.indexOf('ayran') >= 0 && t.indexOf('sujuk') >= 0;
+}));
 var ist = game({ stage: 'istanbul' });
-var terrace = ist.enemies.filter(function (e) { return e.x > 113 * TILE && e.x < 133 * TILE; });
-ok('the İstanbul terrace pair spawns above the terrace block', terrace.length === 2, { n: terrace.length });
+var terrace = ist.enemies.filter(function (e) {
+  return e.x > 99 * TILE && e.x < 196 * TILE && e.y < 10 * TILE;
+});
+ok('the İstanbul terrace is patrolled by a crowd', terrace.length >= 5, { n: terrace.length });
 stepN(ist, 30);
 ok('terrace critters land on the terrace top, not inside it', terrace.every(function (e) {
-  return Math.abs(e.y + e.h - 11 * TILE) < 0.6 && !inTerrain(ist, e);
+  return Math.abs(e.y + e.h - 9 * TILE) < 0.6 && !inTerrain(ist, e);
 }), { bottoms: terrace.map(function (e) { return e.y + e.h; }) });
 
 var cm2 = game({ mode: 'local', twoPlayer: true });
@@ -654,27 +795,125 @@ var sp = findPlayer(sh, 'red');
 sp.x = sheller.x + 2; sp.y = sheller.y - sp.h + 1; sp.vy = 3; sp.invuln = 0;
 stepN(sh, 1);
 ok('stomping a sheller turns it into a shell', sheller.state === 'shell' && !sheller.dead, { state: sheller.state });
-ok('the shell is a low body, not a full critter', sheller.h === 10, { h: sheller.h });
+ok('the shell is a low body, not a full critter', sheller.h === 12, { h: sheller.h });
 sp.state = 'play'; sp.invuln = 0; sp.vy = 0;
 sp.x = sheller.x - 8; sp.y = sheller.y;
 stepN(sh, 1);
 ok('touching a shell kicks it sliding', sheller.state === 'slide' && sheller.vx > 1, { state: sheller.state, vx: sheller.vx });
-ok('a sliding shell keeps the shell body (no pop back to a full sprite)', sheller.h === 10, { h: sheller.h });
+ok('a sliding shell keeps the shell body (no pop back to a full sprite)', sheller.h === 12, { h: sheller.h });
 
 var sh2 = game();
 sh2.enemies.length = 0;
-var wallShell = { type: 'sheller', x: 70 * TILE - 16, y: 240 - 10, w: 14, h: 10, vx: 3.3, vy: 0, dir: 1, state: 'slide', timer: 0, dead: false, onGround: true };
+var wallShell = { type: 'sheller', x: 70 * TILE - 14, y: 240 - 12, w: 13, h: 12, vx: 3.3, vy: 0, dir: 1, state: 'slide', timer: 0, dead: false, onGround: true };
 sh2.enemies.push(wallShell);
-stepN(sh2, 2);
-ok('a sliding shell bounces off a wall instead of vanishing into it', wallShell.vx < 0 && !!wallShell, { vx: wallShell.vx });
-ok('the wall-bounced shell is still a shell', wallShell.h === 10 && !inTerrain(sh2, wallShell), { h: wallShell.h });
+stepN(sh2, 1);
+ok('a sliding shell bounces off a wall instead of vanishing into it', wallShell.vx < 0, { vx: wallShell.vx, x: wallShell.x });
+ok('the wall-bounced shell is still a shell', wallShell.h === 12 && !inTerrain(sh2, wallShell), { h: wallShell.h });
 
 var sh3 = game();
 sh3.enemies.length = 0;
-var restShell = { type: 'sheller', x: 20 * TILE, y: 240 - 10, w: 14, h: 10, vx: 0, vy: 0, dir: 1, state: 'shell', timer: 0, dead: false, onGround: true };
+var restShell = { type: 'sheller', x: 20 * TILE, y: 240 - 12, w: 13, h: 12, baseH: 18, vx: 0, vy: 0, dir: 1, state: 'shell', timer: 0, dead: false, onGround: true };
 sh3.enemies.push(restShell);
 stepN(sh3, 500);
-ok('a kicked-out shell wakes up and walks again', restShell.state === 'walk' && restShell.h === 14, { state: restShell.state, h: restShell.h });
+ok('a kicked-out shell wakes up and walks again', restShell.state === 'walk' && restShell.h === 18, { state: restShell.state, h: restShell.h });
+
+/* ---- food: four voxel pickups, four different effects ---- */
+function feed(st2, p2, type) {
+  st2.foods.push({ type: type, x: p2.x, y: p2.y, w: 14, h: 14, taken: false });
+  E.step(st2, [E.EMPTY_INPUT, E.EMPTY_INPUT]);
+}
+var fd = game();
+fd.enemies.length = 0;
+var fp = findPlayer(fd, 'red');
+stepN(fd, 5);
+fp.hp = 1;
+feed(fd, fp, 'baklava');
+ok('baklava restores one star', fp.hp === 2, { hp: fp.hp });
+fp.hp = 1;
+feed(fd, fp, 'lahmacun');
+ok('lahmacun restores the full three stars', fp.hp === 3, { hp: fp.hp });
+var livesBefore = fd.lives;
+feed(fd, fp, 'ayran');
+ok('ayran grants an extra life', fd.lives === livesBefore + 1, { lives: fd.lives });
+feed(fd, fp, 'sujuk');
+ok('sujuk starts the invincibility timer', fp.star > 0, { star: fp.star });
+fp.hp = 3; fp.invuln = 0; fp.vy = 0;
+fd.enemies.push({ type: 'walker', skin: 'uncle', x: fp.x + 2, y: fp.y + 4, w: 13, h: 20, baseH: 20,
+  vx: 0, vy: 0, dir: 1, state: 'walk', timer: 0, dead: false, onGround: true });
+E.step(fd, [E.EMPTY_INPUT, E.EMPTY_INPUT]);
+ok('sujuk knocks out a critter on contact', fd.enemies[fd.enemies.length - 1].dead === true);
+ok('sujuk means no damage from that contact', fp.hp === 3 && fp.state === 'play', { hp: fp.hp, state: fp.state });
+fp.star = 4;
+stepN(fd, 6);
+ok('the sujuk power runs out again', fp.star === 0, { star: fp.star });
+
+/* ---- the star state survives the network snapshot ---- */
+var snapHost = game({ mode: 'host', twoPlayer: true });
+snapHost.players[0].hp = 2;
+snapHost.players[0].star = 240;
+var snapGuest = E.createGame({ mode: 'guest', twoPlayer: true });
+E.applySnapshot(snapGuest, JSON.parse(JSON.stringify(E.makeSnapshot(snapHost))));
+ok('snapshots carry stars and the sujuk timer', snapGuest.players[0].hp === 2 && snapGuest.players[0].star > 0,
+   { hp: snapGuest.players[0].hp, star: snapGuest.players[0].star });
+
+/* ---- every moving deck can actually be stood on, on every stage ---- */
+STAGES.forEach(function (id) {
+  var stP = game({ stage: id });
+  stP.enemies.length = 0;
+  var pp = stP.players[0];
+  var stood = stP.platforms.map(function (pl) {
+    pp.state = 'play'; pp.hp = 3; pp.invuln = 0;
+    pp.x = pl.x + pl.w / 2; pp.y = pl.y - pp.h - 6; pp.vx = 0; pp.vy = 0;
+    for (var i2 = 0; i2 < 40; i2++) E.step(stP, [E.EMPTY_INPUT, E.EMPTY_INPUT]);
+    return !!pp.onPlatform && Math.abs(pp.y + pp.h - pl.y) < 1.5;
+  });
+  ok('every deck on ' + id + ' is standable', stood.every(Boolean), { stood: stood });
+});
+var ride = game();
+ride.enemies.length = 0;
+var rp = ride.players[0];
+var rpl = ride.platforms.find(function (pl) { return pl.axis === 'x'; });
+rp.x = rpl.x + rpl.w / 2; rp.y = rpl.y - 40; rp.vy = 0;
+stepN(ride, 40);
+var rideX = rp.x, ridePlX = rpl.x;
+stepN(ride, 30);
+ok('a deck carries its rider along', !!rp.onPlatform && Math.abs((rp.x - rideX) - (rpl.x - ridePlX)) < 0.5,
+   { moved: rp.x - rideX, deck: rpl.x - ridePlX });
+
+/* ---- both languages ship the whole script --------------------------- */
+require('../js/i18n.js');
+var I18 = global.I18n;
+ok('the language table loads headless', !!I18 && !!I18.dict.en && !!I18.dict.tr);
+var enKeys = Object.keys(I18.dict.en).sort();
+var trKeys = Object.keys(I18.dict.tr).sort();
+ok('English and Turkish define the same keys',
+   enKeys.length === trKeys.length && enKeys.every(function (k, i) { return k === trKeys[i]; }),
+   { en: enKeys.length, tr: trKeys.length,
+     missing: enKeys.filter(function (k) { return !I18.dict.tr[k]; }) });
+ok('no Turkish string is blank', enKeys.every(function (k) {
+  return typeof I18.dict.tr[k] === 'string' && I18.dict.tr[k].trim().length > 0;
+}));
+ok('Turkish is actually translated, not copied from English', enKeys.filter(function (k) {
+  return I18.dict.tr[k] !== I18.dict.en[k];
+}).length > 120, { changed: enKeys.filter(function (k) { return I18.dict.tr[k] !== I18.dict.en[k]; }).length });
+var fs = require('fs'), pathMod = require('path');
+var htmlSrc = fs.readFileSync(pathMod.join(__dirname, '..', 'index.html'), 'utf8');
+var markupKeys = [];
+htmlSrc.replace(/data-i18n(?:-html|-placeholder|-title|-aria)?="([^"]+)"/g, function (m, k) { markupKeys.push(k); return m; });
+ok('every string in the markup exists in both languages', markupKeys.every(function (k) {
+  return I18.dict.en[k] != null && I18.dict.tr[k] != null;
+}), markupKeys.filter(function (k) { return I18.dict.en[k] == null || I18.dict.tr[k] == null; }));
+ok('the guide art hooks point at real voxel models',
+   ['stars', 'flag', 'bubble', 'lahmacun', 'baklava', 'ayran', 'sujuk',
+    'icecream', 'uncle', 'grump', 'hoodlum', 'sheller'].every(function (id) {
+     return htmlSrc.indexOf('data-art="' + id + '"') >= 0;
+   }));
+var renderSrc = fs.readFileSync(pathMod.join(__dirname, '..', 'js', 'render3d.js'), 'utf8');
+var artIds = ['stars', 'flag', 'bubble', 'lahmacun', 'baklava', 'ayran', 'sujuk',
+  'icecream', 'uncle', 'grump', 'hoodlum', 'sheller'];
+ok('the renderer builds an icon for every guide art hook',
+   artIds.every(function (id) { return renderSrc.indexOf("'" + id + "':") >= 0; }),
+   artIds.filter(function (id) { return renderSrc.indexOf("'" + id + "':") < 0; }));
 
 console.log('\n' + (checks - fails) + '/' + checks + ' checks passed');
 process.exit(fails ? 1 : 0);
