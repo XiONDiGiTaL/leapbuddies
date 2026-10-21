@@ -1358,6 +1358,7 @@
         }
         if (shell) {
           eg.root.position.y = -(epos[1] + 10);
+          eg.body.rotation.z = 0;
         }
         if (en.state === 'slide') {
           eg.root.rotation.z += 0.25;
@@ -1365,7 +1366,18 @@
           eg.root.rotation.z = 0;
         } else {
           eg.root.rotation.z = 0;
-          eg.root.position.y += Math.abs(Math.sin(st.tick * 0.22 + ei)) * 0.9;
+          /* the walk tells you which critter you are dealing with: a seller
+           * who has stopped to serve, a hoodlum leaning into a sprint, a
+           * retiree backing off. Eased so the switch is not a snap. */
+          var mode = en.mode || 'walk';
+          /* the body is a child of a root that is mirrored for facing, so a
+           * negative z-rotation leans *forward* in both directions */
+          var lean = 0, bobNow = 0.9, bobRate = 0.22;
+          if (mode === 'rest') { lean = 0; bobNow = 0.3; bobRate = 0.05; }
+          else if (mode === 'dash') { lean = -0.22; bobNow = 1.5; bobRate = 0.46; }
+          else if (mode === 'bolt') { lean = 0.16; bobNow = 0.6; bobRate = 0.34; }
+          eg.body.rotation.z += (lean - eg.body.rotation.z) * 0.25;
+          eg.root.position.y += Math.abs(Math.sin(st.tick * bobRate + ei)) * bobNow;
         }
       }
 

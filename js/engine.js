@@ -557,15 +557,54 @@
     });
     /* Critters are people-sized now: a themed pedestrian stands 20px, the
      * plain walker and the sheller 18px, against the buddies' 22px. */
-    var enemies = plan.enemies.map(function (e) {
+    var enemies = plan.enemies.map(function (e, qi) {
       var h = e.type === 'walker' && !e.skin ? 18 : e.skin ? 20 : 18;
       return {
         type: e.type, skin: e.skin || '',
         x: e.tx * TILE + 1, y: (e.ty != null ? e.ty : 13) * TILE,
         w: 13, h: h, baseH: h,
-        vx: -0.45, vy: 0, dir: -1, state: 'walk', timer: 0, dead: false, onGround: false
+        vx: -0.45, vy: 0, dir: -1, state: 'walk', timer: 0, dead: false, onGround: false,
+        /* the quirk clock starts staggered, or every hoodlum in the city
+         * would sprint on the same tick */
+        mode: 'walk', q: (qi * 53) % 300, rest: 0, fleeCd: 0
       };
     });
+    /* A handful of authored spawns ended up over a pit when a roof was
+     * shortened under them in a layout pass. Those critters dropped out of
+     * the level within a second, so a seventh of the cast was gone before
+     * the player ever arrived. Snap any such spawn to the nearest column
+     * that actually has a floor, keeping it as close to where it was
+     * authored as the terrain allows. */
+    function floorRow(tx, fromY) {
+      for (var ty = Math.floor(fromY / TILE); ty < LEVEL_H; ty++) {
+        if (g[ty * LEVEL_W + tx] !== T.EMPTY) return ty;
+      }
+      return -1;
+    }
+    enemies.forEach(function (e) {
+      var tx = Math.floor((e.x + e.w / 2) / TILE);
+      if (floorRow(tx, e.y + e.h) >= 0) return;
+      var bestTx = -1, bestRow = -1;
+      for (var d = 1; d <= 24 && bestTx < 0; d++) {
+        var cands = [tx - d, tx + d];
+        for (var ci = 0; ci < cands.length && bestTx < 0; ci++) {
+          var cx = cands[ci];
+          if (cx < 1 || cx >= LEVEL_W) continue;
+          var row = floorRow(cx, e.y + e.h);
+          if (row < 0) continue;
+          var clear = true;
+          for (var r = row - Math.ceil(e.h / TILE); r < row; r++) {
+            if (r < 0 || g[r * LEVEL_W + cx] !== T.EMPTY) { clear = false; break; }
+          }
+          if (!clear) continue;
+          bestTx = cx; bestRow = row;
+        }
+      }
+      if (bestTx < 0) return;                 // no floor anywhere near: leave it
+      e.x = bestTx * TILE + 1;
+      e.y = bestRow * TILE - e.h;
+    });
+
     return {
       w: LEVEL_W, h: LEVEL_H, tiles: g, stage: pick,
       coins: coins, enemies: enemies,
@@ -1068,6 +1107,38 @@
   /* ------------------------------------------------------------------ */
   /* Enemies + berries                                                   */
   /* ------------------------------------------------------------------ */
+  /* Each city's people walk to their own rhythm. The quirks are data, not
+   * special cases buried in the step loop: the guide describes them, the
+   * headless tests measure them, and every speed here stays under a
+   * *walking* buddy (1.7 px/tick), so no pedestrian can ever outrun a
+   * player who is not running. */
+  var QUIRKS = {
+    /* İzmir: the seller stops every few steps to hand over a cone, which
+     * is the opening a new player needs on the first stage. */
+    icecream: { restEvery: 300, restFor: 72 },
+    /* New York: a short sprint, telegraphed by a forward lean, then back to
+     * a stroll — fast enough to worry you, slow enough to react to. */
+    hoodlum: { dashEvery: 260, dashFor: 52, dashSpd: 1.5 },
+    /* İstanbul: he never leaves a ledge in a hurry — every turn is a sip. */
+    uncle: { restOnTurn: 46 },
+    /* Tampa: shuffles, and turns away when a buddy gets in his face. The
+     * cooldown stops him ping-ponging when you dance around him. */
+    grump: { spd: 0.34, bolt: 42, boltCd: 96 }
+  };
+
+  /* True when a live buddy is standing within `reach` px on the side this
+   * critter is facing, at roughly the same height. */
+  function facingBuddy(st, e, reach) {
+    var cx = e.x + e.w / 2, cy = e.y + e.h;
+    for (var i = 0; i < st.players.length; i++) {
+      var p = st.players[i];
+      if (p.absent || p.state !== 'play') continue;
+      var ahead = (p.x + p.w / 2 - cx) * e.dir;
+      if (ahead > 0 && ahead < reach && Math.abs((p.y + p.h) - cy) < 26) return true;
+    }
+    return false;
+  }
+
   function stepEnemy(st, e) {
     if (e.dead) return;
     unbury(st, e);
@@ -1095,16 +1166,38 @@
       if (e.y > st.levelH * TILE + 40) e.dead = true;
       return;
     }
-    // walking
+    // walking, with whatever rhythm this city's people keep
     e.vy += 0.4; if (e.vy > 7) e.vy = 7;
+    var quirk = QUIRKS[e.skin];
     var spd = e.type === 'walker' ? 0.45 : 0.4;
+    var mode = 'walk';
+    if (quirk) {
+      e.q = (e.q || 0) + 1;
+      if (quirk.spd != null) spd = quirk.spd;
+      if (e.rest > 0) e.rest--;
+      else if (quirk.restEvery && e.q % quirk.restEvery === 0) e.rest = quirk.restFor;
+      if (e.rest > 0) {
+        spd = 0; mode = 'rest';
+      } else if (quirk.dashEvery) {
+        if (e.q % quirk.dashEvery < quirk.dashFor) { spd = quirk.dashSpd; mode = 'dash'; }
+      } else if (quirk.bolt) {
+        if (e.fleeCd > 0) e.fleeCd--;
+        else if (facingBuddy(st, e, quirk.bolt)) {
+          e.dir = -e.dir; e.fleeCd = quirk.boltCd; mode = 'bolt';
+        }
+      }
+    }
+    e.mode = mode;
     e.vx = e.dir * spd;
     moveCollide(st, e, false);
-    if (e.hitWall) { e.dir = -e.dir; e.hitWall = 0; }
+    if (e.hitWall) { e.dir = -e.dir; e.hitWall = 0; if (quirk && quirk.restOnTurn) e.rest = quirk.restOnTurn; }
     if (e.onGround) {
       var aheadX = e.dir > 0 ? Math.floor((e.x + e.w + 2) / TILE) : Math.floor((e.x - 2) / TILE);
       var belowY = Math.floor((e.y + e.h + 2) / TILE);
-      if (!solidAt(st, aheadX, belowY)) e.dir = -e.dir;   // turn at ledges
+      if (!solidAt(st, aheadX, belowY)) {   // turn at ledges
+        e.dir = -e.dir;
+        if (quirk && quirk.restOnTurn) e.rest = quirk.restOnTurn;
+      }
     }
     if (e.y > st.levelH * TILE + 40) e.dead = true;
   }
@@ -1319,7 +1412,7 @@
       star: st.players.map(function (p) { return p.star > 0 ? 1 : 0; }),
       foodsTaken: st.foods.map(function (f) { return f.taken ? '1' : '0'; }).join(''),
       enemies: st.enemies.map(function (e) {
-        return [round1(e.x), round1(e.y), e.state, e.dir, e.dead ? 1 : 0];
+        return [round1(e.x), round1(e.y), e.state, e.dir, e.dead ? 1 : 0, e.mode || 'walk'];
       }),
       platforms: st.platforms.map(function (pl) { return [round1(pl.x), round1(pl.y)]; }),
       berries: st.berries.map(function (b) { return [round1(b.x), round1(b.y)]; }),
@@ -1347,6 +1440,9 @@
     s.enemies.forEach(function (a, i) {
       var e = st.enemies[i]; if (!e) return;
       e.x = a[0]; e.y = a[1]; e.state = a[2]; e.dir = a[3]; e.dead = !!a[4];
+      /* the quirk pose is host-authoritative too, or a sprinting hoodlum
+       * would stroll on the guest's screen */
+      if (a[5]) e.mode = a[5];
     });
     s.platforms.forEach(function (a, i) {
       var pl = st.platforms[i]; if (!pl) return;
@@ -1370,7 +1466,7 @@
   }
 
   var Engine = {
-    TILE: TILE, VIEW_W: VIEW_W, VIEW_H: VIEW_H, T: T,
+    TILE: TILE, VIEW_W: VIEW_W, VIEW_H: VIEW_H, T: T, QUIRKS: QUIRKS,
     createGame: createGame, step: stepMapped, makeSnapshot: makeSnapshot,
     applySnapshot: applySnapshot, buildLevel: buildLevel,
     EMPTY_INPUT: EMPTY_INPUT

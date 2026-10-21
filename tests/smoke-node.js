@@ -99,6 +99,99 @@ ok('plain critters are close to buddy height too', STAGES.every(function (id) {
   return E.buildLevel(id).enemies.every(function (e) { return e.skin || e.h === 18; });
 }));
 
+/* ---- each city's people walk to their own rhythm ---- */
+var Q = E.QUIRKS || {};
+ok('the quirk table covers exactly the four themed critters',
+  Object.keys(Q).sort().join(',') === STAGES.map(function (id) { return THEME[id]; }).sort().join(','),
+  Object.keys(Q));
+ok('every quirk has something to do', Object.keys(Q).every(function (k) {
+  var q = Q[k];
+  return q.restEvery || q.dashEvery || q.restOnTurn || q.bolt;
+}), Object.keys(Q).map(function (k) { return k + ':' + JSON.stringify(Q[k]); }));
+/* the one rule that keeps a quirk fair: nothing may outrun a walking buddy */
+var quirkSpeeds = [];
+Object.keys(Q).forEach(function (k) {
+  if (Q[k].spd != null) quirkSpeeds.push([k, Q[k].spd]);
+  if (Q[k].dashSpd != null) quirkSpeeds.push([k, Q[k].dashSpd]);
+});
+ok('no pedestrian speed reaches the walking player (1.7)',
+  quirkSpeeds.every(function (s) { return s[1] > 0 && s[1] < 1.7; }), quirkSpeeds);
+
+/* Walk each stage with an idle buddy and watch what the cast actually does. */
+function watch(id, ticks) {
+  var s = E.createGame({ mode: 'solo', soloColor: 'red', twoPlayer: false, stage: id });
+  var by = {}, fallen = 0;
+  for (var t = 0; t < ticks; t++) {
+    E.step(s, [E.EMPTY_INPUT, E.EMPTY_INPUT]);
+    for (var i = 0; i < s.enemies.length; i++) {
+      var e = s.enemies[i];
+      if (!e.skin) continue;
+      var w = by[e.skin] || (by[e.skin] = { walk: 0, rest: 0, dash: 0, bolt: 0, max: 0, min: 99 });
+      w[e.mode || 'walk']++;
+      var sp = Math.abs(e.vx);
+      if (sp > w.max) w.max = sp;
+      if (sp < w.min) w.min = sp;
+      if (e.y > s.levelH * E.TILE) fallen++;
+    }
+  }
+  return { by: by, fallen: fallen };
+}
+var iz = watch('izmir', 900);
+ok('the dondurma seller stops to serve, then walks on',
+  iz.by.icecream && iz.by.icecream.rest > 0 && iz.by.icecream.walk > 0, iz.by.icecream);
+var ny = watch('nyc', 900);
+ok('the hoodlum sprints in bursts and strolls between them',
+  ny.by.hoodlum && ny.by.hoodlum.max > 1.4 && ny.by.hoodlum.max <= 1.7 && ny.by.hoodlum.min < 0.6, ny.by.hoodlum);
+ok('a sprint does not outrun a walking buddy', ny.by.hoodlum.max < 1.7, ny.by.hoodlum.max);
+var is2 = watch('istanbul', 900);
+ok('Bıyıklı Fehmi stops at every turn',
+  is2.by.uncle && is2.by.uncle.rest > 0 && is2.by.uncle.walk > 0, is2.by.uncle);
+var tam = watch('tampa', 900);
+ok('the retiree shuffles slower than the rest of the cast',
+  tam.by.grump && tam.by.grump.max <= 0.35 && tam.by.grump.max < ny.by.hoodlum.max, tam.by.grump);
+ok('idle buddies never cost the cast a pedestrian',
+  [iz, ny, is2, tam].every(function (r) { return r.fallen === 0; }),
+  [iz.fallen, ny.fallen, is2.fallen, tam.fallen]);
+
+/* the retiree reacts to a buddy in his face, once, then keeps his cool */
+var tg = game({ stage: 'tampa' });
+var gramps = tg.enemies.filter(function (e) { return e.skin === 'grump'; })[0];
+var buddyInFace = findPlayer(tg, 'red');
+function standInFront(g) {
+  buddyInFace.x = g.x + (g.dir > 0 ? g.w + 4 : -4 - buddyInFace.w);
+  buddyInFace.y = g.y; buddyInFace.vy = 0;
+}
+standInFront(gramps);
+var gDir = gramps.dir;
+E.step(tg, [E.EMPTY_INPUT, E.EMPTY_INPUT]);
+ok('the retiree turns away from a buddy in his face',
+  gramps.dir === -gDir && gramps.mode === 'bolt', { was: gDir, now: gramps.dir, mode: gramps.mode });
+var turnedTo = gramps.dir, heldFor = 0;
+for (var gi = 0; gi < 30; gi++) {
+  standInFront(gramps);
+  E.step(tg, [E.EMPTY_INPUT, E.EMPTY_INPUT]);
+  if (gramps.dir !== turnedTo) break;
+  heldFor++;
+}
+ok('he cannot be made to ping-pong: the turn has a cooldown', heldFor === 30, { heldFor: heldFor });
+
+/* the quirk pose has to reach a guest, or a sprint looks like a stroll */
+var hostS = E.createGame({ mode: 'host', twoPlayer: true, stage: 'nyc' });
+stepN(hostS, 200);
+var guestS = E.createGame({ mode: 'guest', twoPlayer: true, stage: 'nyc' });
+E.applySnapshot(guestS, E.makeSnapshot(hostS));
+ok('guests receive the quirk pose with the snapshot',
+  guestS.enemies.every(function (e, i) { return e.mode === hostS.enemies[i].mode; }) &&
+  guestS.enemies.some(function (e) { return e.skin === 'hoodlum' && e.mode === 'dash'; }),
+  guestS.enemies.filter(function (e) { return e.skin === 'hoodlum'; }).map(function (e) { return e.mode; }).join(','));
+
+/* same seed, same city, same people: host and guest must not drift apart */
+var d1 = E.createGame({ mode: 'host', twoPlayer: true, stage: 'tampa' });
+var d2 = E.createGame({ mode: 'guest', twoPlayer: true, stage: 'tampa' });
+stepN(d1, 400); stepN(d2, 400);
+ok('two identical runs produce identical pedestrians',
+  JSON.stringify(E.makeSnapshot(d1).enemies) === JSON.stringify(E.makeSnapshot(d2).enemies));
+
 /* ---- run / skid / jump basics ---- */
 var st = game();
 st.enemies.length = 0;                 // isolate movement from critters

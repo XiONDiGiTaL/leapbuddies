@@ -186,6 +186,25 @@ and moustache, a hoodie and spray can, a cane) so you can tell what is in
 front of you at a glance. The green sheller is on every map, so the
 stomp → shell → kick rule is always taught.
 
+They also *walk* differently, so a city is not just a reskin of the last
+one. The quirks are a data table (`QUIRKS` in [js/engine.js](js/engine.js))
+that the step loop reads, which means the guide, the tests and the netplay
+snapshot all describe the same numbers:
+
+| Critter | Quirk | How it plays |
+|---|---|---|
+| Dondurma Man (İzmir) | stops every 5 s to serve a cone for 1.2 s | a free window on the opening stage; the easiest cast to learn on |
+| Hoodlum (New York) | sprints for 0.85 s every 4.3 s | you must time the stomp, and the forward lean tells you when |
+| Bıyıklı Fehmi (İstanbul) | 46-tick tea break at every wall and every ledge | he never leaves an edge in a hurry, so edges are where you catch him |
+| Angry Grandpa (Tampa) | shuffles at 0.34, turns away when you get within 42 px | you cannot simply walk into him; cut him off against a wall |
+
+Every speed in the table stays below a *walking* buddy (1.7 px/tick), so a
+critter can never outrun a player who is not running — the quirk table is
+the only place critter speed lives, and a test fails the build if anyone
+edits it above that line. The pose is host-authoritative over the network:
+the quirk mode rides along in the enemy snapshot row, so a guest sees the
+same sprint rather than a stroll.
+
 The music is synthesised at runtime by a tiny WebAudio step sequencer:
 one lead line, one bass line and a three-piece drum kit per stage, at most
 32 steps each. There are no audio files.
@@ -246,8 +265,8 @@ one lead line, one bass line and a three-piece drum kit per stage, at most
   keycaps are rendered live from the same code into small canvases.
 - **Budget** — tiles are one `InstancedMesh` and are rebuilt only when a
   block changes; bananas are a second instanced mesh. The scene stays near
-  30k triangles and a couple of dozen draw calls, and rendering pauses
-  while the tab is hidden.
+  40k triangles and a couple of dozen draw calls (17–24 measured), and
+  rendering pauses while the tab is hidden.
 - **Audio** — [js/audio.js](js/audio.js) synthesises every sound effect and
   loop with WebAudio oscillators plus one shared noise buffer for drums.
   One master level scales every voice, so the HUD slider moves music and
@@ -350,7 +369,7 @@ needs an `https://` or `localhost` origin for the WebSocket and clipboard.
 node tests/smoke-node.js
 ```
 
-170 headless checks: level data, movement, gate (solo and two-plate forms),
+183 headless checks: level data, movement, gate (solo and two-plate forms),
 head bounce, jars, checkpoints, goal, the full lives model (solo deaths,
 three-strike game over, co-op bubbles, partner-down team wipes, timeout,
 respawn stars, death pop placement), the camera split and catch-up
@@ -383,7 +402,15 @@ fifteen-second patrol with no critter ending
 up buried or outside the level, recovery when one is shoved into the ground,
 that a stomped pedestrian dies instead of shelling, and the stomp → shell →
 slide cycle (the shell keeps its low body when kicked, bounces off walls
-instead of disappearing, and wakes back up).
+instead of disappearing, and wakes back up). The quirk pass walks every city
+for fifteen seconds with an idle buddy and asserts what each cast actually
+does: the seller rests and then walks on, the hoodlum's sprint tops out above
+1.4 and below a walking buddy, the uncle stops at his turns, the retiree
+shuffles slower than everyone else, and no quirk ever drops a pedestrian out
+of the level. It also pins the fairness rule (no quirk speed reaches 1.7),
+drives the retiree's turn and its cooldown with a buddy planted in his face,
+checks the quirk pose survives a snapshot round trip to a guest, and confirms
+two identical runs stay identical tick for tick.
 
 Rendering, the how-to-play keycaps, the field-guide icons, local 2P and
 online co-op are verified in a browser: two tabs, invite link, ready, start, guest input, carry
@@ -399,7 +426,7 @@ tablet stay at the fixed framing, the phone frames render the buddy at
 the four stages is loaded in the browser and checked for its own terrain
 silhouette and its own cast: the themed meshes are built per critter (a
 dondurma vendor is not a recoloured walker), draw calls stay near 20–25 and
-the scene near 30k triangles, with no console errors.
+the scene near 40k triangles, with no console errors.
 
 ## Deploying
 
@@ -421,7 +448,7 @@ immediately gets `xiondigital.net/<repo-name>/` — no per-repo DNS work.
 To publish a new build:
 
 1. Bump the `?v=` query on the stylesheet and every script in
-   [index.html](index.html) (`?v=40` today). GitHub Pages caches files for
+   [index.html](index.html) (`?v=41` today). GitHub Pages caches files for
    minutes; a version bump is what makes a release land immediately in
    browsers that already have the old files.
 2. `git push` to `main`. Pages rebuilds automatically; the deployment
