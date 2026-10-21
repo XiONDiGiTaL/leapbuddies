@@ -448,7 +448,7 @@ immediately gets `xiondigital.net/<repo-name>/` — no per-repo DNS work.
 To publish a new build:
 
 1. Bump the `?v=` query on the stylesheet and every script in
-   [index.html](index.html) (`?v=41` today). GitHub Pages caches files for
+   [index.html](index.html) (`?v=42` today). GitHub Pages caches files for
    minutes; a version bump is what makes a release land immediately in
    browsers that already have the old files.
 2. `git push` to `main`. Pages rebuilds automatically; the deployment

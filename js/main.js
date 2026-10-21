@@ -319,6 +319,10 @@
   /* ---------------- field guide ---------------- */
   function openGuide() {
     $('guide-modal').classList.remove('hidden');
+    /* The icons are painted by the menu's preview loop, which does not run
+     * during a stage. Paint on open so the sheet never shows empty boxes,
+     * whatever opened it. */
+    if (R && R.paintGuideArt) R.paintGuideArt(performance.now());
     $('btn-guide-close').focus();
   }
   function closeGuide() {
